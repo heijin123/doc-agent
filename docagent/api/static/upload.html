@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocAgent · 文档上传</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- 顶部导航：问答页 / 上传页（当前）互相跳转 -->
+  <nav class="top_nav">
+    <span class="brand">Doc<span class="accent">Agent</span></span>
+    <a class="nav_link" href="/chat">知识问答</a>
+    <a class="nav_link active" href="/upload">文档上传</a>
+    <span class="nav_spacer"></span>
+    <button id="clear_all_button" class="danger">清空列表</button>
+  </nav>
+
+  <main class="page_container">
+    <h1 class="page_title">文档上传</h1>
+    <p class="page_subtitle">上传后自动进入解析与建库流水线（格式探测 → 解析 → 质量门 → 切片 → 落库）。支持一次选多个文件，或整个文件夹。</p>
+
+    <div class="panel">
+      <!-- 双入口：文件多选 与 文件夹（webkitdirectory，仅 Chromium 系浏览器支持） -->
+      <input type="file" id="file_picker" class="hidden_file_input" multiple />
+      <input type="file" id="folder_picker" class="hidden_file_input" webkitdirectory />
+
+      <div class="upload_actions">
+        <button id="pick_files_button" class="primary">选择文件（可多选）</button>
+        <button id="pick_folder_button">选择文件夹</button>
+        <button id="start_upload_button" disabled>开始上传</button>
+        <span id="folder_support_hint" class="upload_hint"></span>
+      </div>
+      <p class="upload_hint">支持格式：PDF / Word / Excel / PPT / Markdown 等（解析层按格式路由）</p>
+
+      <!-- 待传/已传文件列表：每行一个文件，含进度与状态 -->
+      <div id="file_list" class="file_list"></div>
+      <div id="summary_bar" class="summary_bar" style="display:none"></div>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+    /* ============================================================
+       上传页前端逻辑
+       API 契约（后端 M1 对齐实现）：
+         POST /api/v1/ingest            multipart/form-data，字段名 file
+         成功: { "filename": string, "status": "ok",
+                 "pages_parsed": number, "chunks_created": number }
+         失败: { "filename": string, "status": "failed", "error": string }
+       约定：解析失败也返回 HTTP 200 + status=failed（业务失败不算网络错误）；
+             网络层错误才走非 200。
+       说明：当前为前端骨架，后端链路 M1 接入前，接口返回演示占位结果。
+       ============================================================ */
+
+    // 单个待传文件在内存中的状态（选择后、上传前集中管理）
+    let selected_files = [];   // [{ file: File, relative_path: string, status: "pending"|"ok"|"failed", error: string|null }]
+
+    const file_picker = document.getElementById("file_picker");
+    const folder_picker = document.getElementById("folder_picker");
+    const file_list_element = document.getElementById("file_list");
+    const summary_element = document.getElementById("summary_bar");
+    const start_button = document.getElementById("start_upload_button");
+
+    // 浏览器不支持文件夹选择（webkitdirectory 是 Chromium 私有特性）时禁用该入口
+    const supports_folder_picker = "webkitdirectory" in document.createElement("input");
+    document.getElementById("folder_support_hint").textContent =
+      supports_folder_picker ? "" : "（当前浏览器不支持文件夹选择，请用多选）";
+
+    // ---- 文件选择：展示相对路径（文件夹内文件带层级），同名文件去重 ----
+    function add_files_to_list(file_list_from_picker) {
+      const before = selected_files.length;
+      Array.from(file_list_from_picker).forEach(function (file) {
+        // webkitRelativePath: "文件夹名/子路径/文件.pdf"；普通多选为空串，回退文件名
+        const relative_path = file.webkitRelativePath || file.name;
+        const already_selected = selected_files.some(function (entry) {
+          return entry.relative_path === relative_path;
+        });
+        if (already_selected) return;
+        selected_files.push({ file: file, relative_path: relative_path, status: "pending", error: null });
+      });
+      const added = selected_files.length - before;
+      if (added === 0) {
+        alert("所选文件已在列表中，无需重复添加");
+        return;
+      }
+      refresh_file_list();
+    }
+
+    file_picker.addEventListener("change", function () { add_files_to_list(file_picker.files); file_picker.value = ""; });
+    folder_picker.addEventListener("change", function () { add_files_to_list(folder_picker.files); folder_picker.value = ""; });
+    document.getElementById("pick_files_button").addEventListener("click", function () { file_picker.click(); });
+    document.getElementById("pick_folder_button").addEventListener("click", function () {
+      if (supports_folder_picker) folder_picker.click();
+      else alert("当前浏览器不支持文件夹选择，请改用「选择文件（可多选）」并按住 Ctrl 多选。");
+    });
+
+    // ---- 列表渲染：全量重建（文件数通常几十以内，重建开销可忽略）----
+    function refresh_file_list() {
+      file_list_element.innerHTML = "";
+      selected_files.forEach(function (entry, index) {
+        file_list_element.appendChild(build_file_row(entry, index));
+      });
+      update_start_button_state();
+    }
+
+    function build_file_row(entry, index) {
+      const row = document.createElement("div");
+      row.className = "file_row";
+      row.dataset.index = index;
+
+      const name_cell = document.createElement("div");
+      name_cell.className = "file_name";
+      name_cell.textContent = entry.relative_path;
+      name_cell.title = entry.relative_path;
+
+      const meta_cell = document.createElement("div");
+      meta_cell.className = "file_meta";
+      meta_cell.textContent = format_file_size(entry.file.size);
+
+      const badge = document.createElement("span");
+      badge.className = "status_badge " + entry.status;
+      badge.textContent = status_label(entry.status);
+
+      const progress_track = document.createElement("div");
+      progress_track.className = "progress_track";
+      const progress_fill = document.createElement("div");
+      progress_fill.className = "progress_fill";
+      progress_track.appendChild(progress_fill);
+
+      const remove_button = document.createElement("button");
+      remove_button.textContent = "移除";
+      remove_button.className = "remove_button";
+      // 已成功/正在上传的文件不可移除，避免中途删除造成状态错乱
+      remove_button.disabled = entry.status === "ok" || entry.status === "uploading";
+      remove_button.addEventListener("click", function () {
+        selected_files.splice(index, 1);
+        refresh_file_list();
+      });
+
+      row.appendChild(name_cell);
+      row.appendChild(meta_cell);
+      row.appendChild(progress_track);
+      row.appendChild(badge);
+      row.appendChild(remove_button);
+      return row;
+    }
+
+    function format_file_size(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / 1024 / 1024).toFixed(1) + " MB";
+    }
+    function status_label(status) {
+      return { pending: "待上传", uploading: "上传中", ok: "已完成", failed: "失败" }[status] || status;
+    }
+
+    // ---- 逐个上传：XHR 才能拿到上传进度事件（fetch 不支持）----
+    function upload_one_entry(entry, index) {
+      return new Promise(function (resolve) {
+        entry.status = "uploading";
+        update_row_status(index);
+
+        const form_data = new FormData();
+        form_data.append("file", entry.file);
+
+        const request = new XMLHttpRequest();
+        request.open("POST", "/api/v1/ingest");
+
+        request.upload.onprogress = function (event) {
+          if (!event.lengthComputable) return;
+          const percent = Math.round((event.loaded / event.total) * 100);
+          update_row_progress(index, percent);
+        };
+        request.onload = function () {
+          let body = null;
+          try { body = JSON.parse(request.responseText); } catch (parse_error) { /* 响应非 JSON，按失败处理 */ }
+          if (request.status >= 200 && request.status < 300 && body && body.status === "ok") {
+            entry.status = "ok";
+            entry.parsed_pages = body.pages_parsed;
+            entry.created_chunks = body.chunks_created;
+            update_row_status(index);
+            update_row_progress(index, 100);
+          } else {
+            entry.status = "failed";
+            entry.error = (body && body.error) || ("服务返回 " + request.status);
+            update_row_status(index);
+          }
+          resolve();
+        };
+        request.onerror = function () {
+          entry.status = "failed";
+          entry.error = "网络错误，请确认服务已启动";
+          update_row_status(index);
+          resolve();
+        };
+
+        request.send(form_data);
+      });
+    }
+
+    async function start_upload() {
+      const pending_indexes = [];
+      selected_files.forEach(function (entry, index) {
+        if (entry.status === "pending") pending_indexes.push(index);
+      });
+      if (pending_indexes.length === 0) { alert("没有待上传的文件"); return; }
+
+      start_button.disabled = true;
+      // 逐个串行上传：管线单文档处理语义，也避免并发打满服务
+      for (const index of pending_indexes) {
+        await upload_one_entry(selected_files[index], index);
+      }
+      start_button.disabled = false;
+      update_summary();
+    }
+
+    // ---- 行内状态/进度更新（避免整表重建打断进度条动画）----
+    function update_row_status(index) {
+      const row = file_list_element.querySelector('.file_row[data-index="' + index + '"]');
+      if (!row) return;
+      const badge = row.querySelector(".status_badge");
+      const entry = selected_files[index];
+      badge.className = "status_badge " + entry.status;
+      badge.textContent = entry.status === "failed" && entry.error ? "失败" : status_label(entry.status);
+      badge.title = entry.error || "";
+      const remove_button = row.querySelector(".remove_button");
+      if (remove_button) remove_button.disabled = entry.status === "ok" || entry.status === "uploading";
+    }
+    function update_row_progress(index, percent) {
+      const row = file_list_element.querySelector('.file_row[data-index="' + index + '"]');
+      if (!row) return;
+      row.querySelector(".progress_fill").style.width = percent + "%";
+    }
+
+    function update_start_button_state() {
+      const has_pending = selected_files.some(function (entry) { return entry.status === "pending"; });
+      start_button.disabled = !has_pending;
+      update_summary();
+    }
+
+    // 汇总条：成功/失败计数 + 本次摄取规模（页数/切片数合计）
+    function update_summary() {
+      const done = selected_files.filter(function (entry) { return entry.status === "ok"; });
+      const failed = selected_files.filter(function (entry) { return entry.status === "failed"; });
+      const total_pages = done.reduce(function (sum, entry) { return sum + (entry.parsed_pages || 0); }, 0);
+      const total_chunks = done.reduce(function (sum, entry) { return sum + (entry.created_chunks || 0); }, 0);
+
+      if (selected_files.length === 0) { summary_element.style.display = "none"; return; }
+      summary_element.style.display = "";
+      let text = "已选 <span class='count'>" + selected_files.length + "</span> 个文件";
+      if (done.length) text += " · 成功 <span class='count'>" + done.length + "</span> 个";
+      if (failed.length) text += " · 失败 <span class='count'>" + failed.length + "</span> 个";
+      if (done.length) text += " · 共解析 " + total_pages + " 页 / 生成 " + total_chunks + " 个切片";
+      summary_element.innerHTML = text;
+    }
+
+    start_button.addEventListener("click", start_upload);
+    document.getElementById("clear_all_button").addEventListener("click", function () {
+      // 上传中的文件不打断（服务端仍在处理），仅清空已结束的列表项
+      const removable = selected_files.filter(function (entry) { return entry.status !== "uploading"; });
+      selected_files = removable;
+      refresh_file_list();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# 运行时数据
+data/chroma_db/
+data/inbox/          # API 上传落盘目录（用户上传的原始文档，勿入库）
+data/markdown/
+data/index_meta.json
+data/ingest_runs.json
+
+# 大体积语料不入库（面试演示用固定样本，必要时单独分发）
+data/samples/*.pdf
+!data/samples/README.md
+
+# 工具产物
+tmp/
+.DS_Store

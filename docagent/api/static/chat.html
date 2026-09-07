@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocAgent · 知识问答</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- 顶部导航：问答页（当前）/ 上传页 互相跳转 -->
+  <nav class="top_nav">
+    <span class="brand">Doc<span class="accent">Agent</span></span>
+    <a class="nav_link active" href="/chat">知识问答</a>
+    <a class="nav_link" href="/upload">文档上传</a>
+    <span class="nav_spacer"></span>
+    <button id="new_conversation_button" title="清空当前会话历史，重新开始">新会话</button>
+  </nav>
+
+  <main class="page_container">
+    <div class="panel chat_container">
+      <!-- 消息区：user / assistant 气泡交替追加 -->
+      <div id="chat_history" class="chat_history">
+        <div class="empty_hint" id="empty_hint">
+          <span class="big">📄 已建知识库，向我提问吧</span>
+          例如：Hermes Agent 支持哪些工具？<br />
+          答案会标注引用出处，可回溯到原文。
+        </div>
+      </div>
+
+      <!-- 输入栏：Enter 发送，Shift+Enter 换行 -->
+      <div class="chat_input_bar">
+        <textarea id="message_input" placeholder="输入你的问题，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
+        <button id="send_button" class="primary">发送</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+    /* ============================================================
+       问答页前端逻辑
+       API 契约（后端 M2 对齐实现）：
+         POST /api/v1/chat
+         请求:  { "message": string, "thread_id": string|null }
+         响应:  {
+                  "thread_id": string,          // 服务端会话号，无则新建
+                  "final_answer": string,       // 最终答复文本
+                  "sources": [                  // 引用出处（检索到的文档块）
+                    { "document_name": string, "page_number": number|null,
+                      "snippet": string }
+                  ],
+                  "duration_s": number
+                }
+       说明：当前为前端骨架，后端链路 M2 接入前，接口返回演示占位答复。
+       ============================================================ */
+
+    // ---- 会话状态：thread_id 存 localStorage，同一浏览器持续同一会话 ----
+    const THREAD_KEY = "docagent_thread_id";
+    let thread_id = localStorage.getItem(THREAD_KEY) || null;
+
+    const history_element = document.getElementById("chat_history");
+    const input_element = document.getElementById("message_input");
+    const send_button = document.getElementById("send_button");
+    const empty_hint = document.getElementById("empty_hint");
+    let is_waiting_answer = false;   // 答复未返回前锁住输入，防止连发
+
+    // 追加一条消息气泡；来源(assistant) 时带引用标签
+    function append_message(role, text, sources, meta_text) {
+      empty_hint.style.display = "none";
+      const wrap = document.createElement("div");
+      wrap.className = "message " + role;
+
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = role === "user" ? "我" : "AI";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.textContent = text;
+
+      if (sources && sources.length > 0) {
+        const box = document.createElement("div");
+        box.className = "sources";
+        sources.forEach(function (src) {
+          const tag = document.createElement("span");
+          tag.className = "source_tag";
+          tag.textContent = src.document_name + (src.page_number ? " · 第" + src.page_number + "页" : "");
+          tag.title = src.snippet || "";
+          box.appendChild(tag);
+        });
+        bubble.appendChild(box);
+      }
+      if (meta_text) {
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = meta_text;
+        bubble.appendChild(meta);
+      }
+
+      wrap.appendChild(who);
+      wrap.appendChild(bubble);
+      history_element.appendChild(wrap);
+      history_element.scrollTop = history_element.scrollHeight;
+    }
+
+    // 输入中的“思考中…”占位，答复到达后移除
+    let typing_placeholder = null;
+    function show_typing() {
+      typing_placeholder = document.createElement("div");
+      typing_placeholder.className = "typing_indicator";
+      typing_placeholder.textContent = "AI 正在思考…";
+      history_element.appendChild(typing_placeholder);
+      history_element.scrollTop = history_element.scrollHeight;
+    }
+    function hide_typing() {
+      if (typing_placeholder) { typing_placeholder.remove(); typing_placeholder = null; }
+    }
+
+    async function send_message() {
+      const text = input_element.value.trim();
+      if (!text || is_waiting_answer) return;
+
+      append_message("user", text);
+      input_element.value = "";
+      set_waiting(true);
+      show_typing();
+
+      try {
+        const response = await fetch("/api/v1/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, thread_id: thread_id })
+        });
+        if (!response.ok) throw new Error("服务返回 " + response.status);
+
+        const data = await response.json();
+        thread_id = data.thread_id || thread_id;
+        if (thread_id) localStorage.setItem(THREAD_KEY, thread_id);
+
+        hide_typing();
+        append_message("assistant", data.final_answer, data.sources || [],
+          data.duration_s != null ? "耗时 " + data.duration_s + " 秒" : null);
+      } catch (error) {
+        hide_typing();
+        append_message("assistant", "请求失败：" + error.message + "（服务是否已启动？）");
+      } finally {
+        set_waiting(false);
+        input_element.focus();
+      }
+    }
+
+    // 等待答复期间：禁用发送键 + 输入框占位提示
+    function set_waiting(waiting) {
+      is_waiting_answer = waiting;
+      send_button.disabled = waiting;
+      input_element.placeholder = waiting ? "AI 正在答复，请稍候…" : "输入你的问题，Enter 发送，Shift+Enter 换行";
+    }
+
+    // 新会话：清空展示 + 重置 thread_id（历史留在服务端，不删除）
+    document.getElementById("new_conversation_button").addEventListener("click", function () {
+      thread_id = null;
+      localStorage.removeItem(THREAD_KEY);
+      history_element.innerHTML = "";
+      empty_hint.style.display = "";
+    });
+
+    send_button.addEventListener("click", send_message);
+    input_element.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        send_message();
+      }
+    });
+    // 自动增高输入框，长问题不滚动
+    input_element.addEventListener("input", function () {
+      input_element.style.height = "auto";
+      input_element.style.height = Math.min(input_element.scrollHeight, 120) + "px";
+    });
+    input_element.focus();
+  </script>
+</body>
+</html>
