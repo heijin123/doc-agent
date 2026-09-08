@@ -87,6 +87,17 @@
           tag.textContent = src.document_name + (src.page_number ? " · 第" + src.page_number + "页" : "");
           tag.title = src.snippet || "";
           box.appendChild(tag);
+          // 引用块关联的原图（[IMAGE] 占位的实体）——图片展示引用链路（D7）
+          if (src.image_ids && src.image_ids.length > 0) {
+            src.image_ids.forEach(function (imageId) {
+              const image = document.createElement("img");
+              image.className = "source_image";
+              image.src = "/api/images/" + imageId;
+              image.alt = imageId;
+              image.title = "引用文档中的原图";
+              box.appendChild(image);
+            });
+          }
         });
         bubble.appendChild(box);
       }

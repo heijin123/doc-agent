@@ -21,6 +21,7 @@ import hashlib
 import threading
 import time
 
+import httpx
 from openai import (
     APIConnectionError,
     APITimeoutError,
@@ -38,6 +39,9 @@ _resolved: dict | None = None
 # embedding 重试：每批最多 3 次尝试，退避 1s/2s/4s（覆盖连接抖动与限流 429）
 EMBED_MAX_ATTEMPTS = 3
 EMBED_RETRY_BACKOFF_SECONDS = 1.0
+
+# 客户端超时（2026-09-08 从 VLM 侧同款教训补）：不给 timeout 偶发无响应会永久挂起
+CLIENT_TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=60.0, pool=10.0)
 
 
 def _resolve() -> dict:
@@ -69,6 +73,7 @@ def _get_client() -> OpenAI:
                 _client = OpenAI(
                     api_key=config.DASHSCOPE_API_KEY,
                     base_url=config.DASHSCOPE_BASE_URL,
+                    timeout=CLIENT_TIMEOUT,  # 见常量注释：防永久挂起
                 )
     return _client
 

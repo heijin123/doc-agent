@@ -186,8 +186,8 @@ Python 3.13+，与 demo1 同栈（.venv 隔离）；新依赖控制在最小集�
 | 里程碑 | 内容 | 过闸标准 | 依赖资产 |
 |---|---|---|---|
 | M1 | ✅ 完成（2026-09-07）：项目骨架（FastAPI + CLI 同构）+ 摄取编排 v1 并入 LangGraph（5 节点 detect→parse→gate→chunk→store，每节点失败路由）+ POST /api/v1/ingest 真实端点 | 单文档入库 + 报告雏形；verify_ingest_m1 47/47 全绿 | pdf_to_markdown / quality_gate / vectorstore 经验 / demo1 server 骨架 |
-| M2 | VLM 转录 + 去重 + 元数据/溯源 schema + 摄取报告完整 | R2 可演示；5 类语料全入库 | vlm_describe_figure |
-| M3 | 问答 Agent（复用编排 + search_docs + 引用溯源 + 幽灵拦截） | R3/R4/R5 过闸 | demo1 agents 骨架 |
+| M2 | 图片引用链路（✅ 2026-09-08：提取/占位符/image_ids/sqlite 仓库/编排落盘，D7）+ VLM 转录（✅ 2026-09-08 mock 15/15 + **真实链路闭环**：react 5 红页 qwen-vl 真实转录 → 判别词 Apple Remote/keyboard/Front Row 语义检索命中 P2 figure_transcript 块）。**v2 语义**：红页原文不可信不产块、转录块 figure_transcript 追加尾部（老块 id 不动、无平移无孤儿）、历史乱码块由 CLI `--rebuild` 显式重建 | R2/R3 过闸 | vlm_describe_figure + 图片仓库 |
+| M3 | 问答 Agent（✅ 2026-09-08：docagent/llm.py chat 封装 + qa.py 问答图 route→greet/search→answer→citations，幽灵引用代码层剔除 strip_out_of_range_citations + sources 契约 + 图片展示端点 /api/images/{id} + chat.html 渲染原图） | R3/R4/R5 过闸 | demo1 agents 骨架 |
 | M4 | 评估体系 + golden 定稿 + 文档收尾（README/架构图/面试叙事） | R1-R7 全绿 | eval_parsing 扩展 |
 | v1.1（待定） | MinerU 集成 / 混合检索 RRF / 网页工作台 | 视真实场景与时间 | — |
 
@@ -205,6 +205,8 @@ Python 3.13+，与 demo1 同栈（.venv 隔离）；新依赖控制在最小集�
 | D4 | 摄取编排是否用 LangGraph | ✅ 已定（2026-09-07）：**是**。摄取无模型自主决策循环，本质 Workflow 非 Agent——上编排不为"智能"，借状态机外壳组织六步（节点=步骤 / 条件边=失败与质量门路由 / state=逐文档报告累积）；同为 demo1 框架两种用法的核心叙事 | M1 已按 5 节点状态机落地 |
 | D5 | MinerU 慢路径形态 | MVP 用 VLM 转录覆盖 figure 块（已实证）；MinerU 本地装放 v1.1 | 决定慢路径依赖 |
 | D6 | 向量库形态 | ✅ 已定（2026-09-07）：**单文本通道**——图片/图块不做独立图片向量库（无多模态向量），由 VLM 转录为文本块（block_type=figure_transcript）入同一文本库 | 决定 M2 转录产物去向；M1 本就纯文本向量 |
+| D7 | 图片的展示引用（图片向量之外的第二角色） | ✅ 已定（2026-09-08）：**图片不进向量检索，但不丢弃**——切块时提取图片生成 image_id（=doc_stem+内容md5前10，幂等去重），写入 sqlite 图片表（doc_id/url/image_id，图文件落 data/images/）；文档流原位写 `[IMAGE:xxx]` 占位符（随块文本入向量库）；metadata 存 `image_ids`（逗号串，Chroma 标量约束）；召回后由展示层把占位符替换为 `<img>`。图片向量仍不做（demo 无高价值/专用文档场景，v1.1 候选） | 决定摄取层图片提取与落盘；M2 范围含图片引用 + VLM 转录两条线 |
+| D8 | 中间表示统一策略 | ✅ 已定（2026-09-08）：**按文档形态分流，不一刀切转 md**——线性排版文档（word/ppt）归一化为 md（已实现）；**excel/json 保留结构切**（转 md 丢"一行一记录"/json_path 溯源，倒退）；PDF 快路径直取文本、红页走慢路径（MinerU 仍按 D5 放 v1.1，测试后评估） | 决定切片层架构维持"形态路由"，不重构为全量 md 归一化 |
 
 ---
 

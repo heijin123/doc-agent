@@ -14,7 +14,10 @@ import sys
 import time
 from pathlib import Path
 
+from docagent.eval import print_report as print_eval_report
+from docagent.eval import run_eval
 from docagent.ingest.pipeline import run_document
+from docagent.vectorstore import store as vector_store
 
 # 支持的摄取格式（与 file_type_detection 一致；旧版 .doc/.xls 在探测层会被拒并提示）
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".doc", ".md", ".txt", ".json", ".xlsx", ".xls", ".pptx"}
@@ -55,6 +58,8 @@ def print_report(report: dict) -> None:
     print(line)
     if report.get("error"):
         print(f"       原因: {report['error']}")
+    if report.get("image_note"):
+        print(f"       提示: {report['image_note']}")
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
@@ -68,6 +73,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     reports = []
     batch_start = time.perf_counter()
     for file_path in files:
+        if args.rebuild:
+            deleted_count = vector_store.delete_doc_blocks(file_path.stem)
+            print(f"[重建] 清理 {file_path.name} 旧块 {deleted_count} 条")
         report = run_document(file_path)  # 图内已隔离失败，绝不外抛中断批次
         reports.append(report)
         print_report(report)
@@ -93,11 +101,30 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0 if failed == 0 else 2
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """问答评估（M4）：golden → 检索 recall/MRR → 门槛判定；--answers 加答案层。"""
+    report = run_eval(top_k=args.top_k, with_answers=args.answers)
+    print_eval_report(report)
+    gate_passed = report["gate"]["passed"]
+    # mock（无语义）与门槛不适用时不算失败——链路跑通即绿；真向量下按 R4 判
+    return 0 if gate_passed is not False else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docagent", description="文档智能 + RAG（doc-agent）CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
     ingest_parser = subparsers.add_parser("ingest", help="摄取文档到向量库")
     ingest_parser.add_argument("paths", nargs="+", help="文件或目录路径（可多个）")
+    ingest_parser.add_argument(
+        "--rebuild", action="store_true",
+        help="重建模式：摄取前显式删除该文档全部旧块（用于 VLM 升级等结构变化后的孤儿清理）",
+    )
+    eval_parser = subparsers.add_parser("eval", help="问答评估：golden 检索 recall/MRR + 门槛（R4）")
+    eval_parser.add_argument("--top-k", type=int, default=5, help="检索返回块数（默认 5）")
+    eval_parser.add_argument(
+        "--answers", action="store_true",
+        help="加跑答案层：逐条 run_question 并校验引用可回查率（需真 Key，调用 qwen-plus）",
+    )
     return parser
 
 
@@ -105,6 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "ingest":
         return cmd_ingest(args)
+    if args.command == "eval":
+        return cmd_eval(args)
     return 1
 
 

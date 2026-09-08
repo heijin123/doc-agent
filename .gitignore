@@ -9,6 +9,8 @@ data/inbox/          # API 上传落盘目录（用户上传的原始文档，�
 data/markdown/
 data/index_meta.json
 data/ingest_runs.json
+data/images/         # 摄取提取的图片文件（doc_id 子目录，幂等落盘）
+data/image_files.db  # 图片资源 sqlite 索引
 
 # 大体积语料不入库（面试演示用固定样本，必要时单独分发）
 data/samples/*.pdf
@@ -17,3 +19,5 @@ data/samples/*.pdf
 # 工具产物
 tmp/
 .DS_Store
+
+data/reports/          # 评估报告（运行产物，随跑随变；golden 才入库）

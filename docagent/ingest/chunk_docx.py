@@ -11,7 +11,10 @@
   必须按 body 元素顺序遍历（iter_block_items 惯用法），转成 markdown 表格后
   表格文本不会被切碎（表格是"不可分割块"，切进两个块就都不可用）。
 
-v1 取舍：图片不转录（占位注释说明图内容缺失），VLM 转录在 M2 补全节点接入。
+图片引用（2026-09-08 起）：段落 XML 中的内联图（w:drawing → a:blip → r:embed）
+经 related_parts 取字节，以 [IMAGE:{image_id}] 独立行追加在该段文本之后
+（v1 段级定位：Word 插图多为独立图段，正文在相邻段，段级近似足够；
+图内文字的语义转录仍属 M2 VLM 兜底，本层只做"图不丢、可展示"）。
 """
 from __future__ import annotations
 
@@ -19,45 +22,76 @@ from pathlib import Path
 
 import docx
 from docx.document import Document as _Document
+from docx.oxml.ns import qn
 from docx.table import Table as _Table
 from docx.text.paragraph import Paragraph as _Paragraph
 
 from .chunk_markdown import chunk_markdown_text
-from .chunk_models import DocumentChunk
+from .chunk_models import DocumentChunk, ExtractedImage, make_image_id
 
 # 归一化成 markdown 时的表格列分隔与标题标记
 _TABLE_CELL_SEPARATOR = "|"
 _TABLE_HEADER_SEPARATOR_ROW = "---"
 _HEADING_PREFIX_BY_LEVEL = {1: "#", 2: "##", 3: "###"}  # 更深标题并入三级，不无限细分
 
+# 媒体类型 → 文件扩展名（python-docx related part 给出 content_type，无原始文件名）
+_IMAGE_EXT_BY_CONTENT_TYPE = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+    "image/tiff": "tiff",
+    "image/x-emf": "emf",
+    "image/x-wmf": "wmf",
+    "image/svg+xml": "svg",
+}
 
-def chunk_docx_file(file_path: Path, source_file: str, document_title: str) -> list[DocumentChunk]:
-    """读取 .docx，按标题层级与表格结构切成知识块。"""
+
+def chunk_docx_file(
+    file_path: Path, source_file: str, document_title: str
+) -> tuple[list[DocumentChunk], list[ExtractedImage]]:
+    """读取 .docx，按标题层级与表格结构切成知识块；提取内联图片。"""
     document = docx.Document(str(file_path))
-    markdown_lines = _convert_document_to_markdown_lines(document)
+    markdown_lines, images = _convert_document_to_markdown_lines(document, source_file)
     markdown_text = "\n".join(markdown_lines)
     if not markdown_text.strip():
-        return []
-    return chunk_markdown_text(markdown_text, source_file, document_title)
+        return [], images
+    chunks = chunk_markdown_text(markdown_text, source_file, document_title)
+    return chunks, images
 
 
-def _convert_document_to_markdown_lines(document: _Document) -> list[str]:
-    """把 docx 正文元素按出现顺序转成 markdown 行流（标题带 #、表格带 |）。"""
+def _convert_document_to_markdown_lines(
+    document: _Document, source_file: str
+) -> tuple[list[str], list[ExtractedImage]]:
+    """把 docx 正文元素按出现顺序转成 markdown 行流；图以 [IMAGE] 行入流并收集字节。"""
+    source_stem = Path(source_file).stem
     markdown_lines: list[str] = []
+    images: list[ExtractedImage] = []
+    seen_image_ids: set[str] = set()
+
     for block in _iter_block_items(document):
         if isinstance(block, _Paragraph):
             heading_level = _paragraph_heading_level(block)
             paragraph_text = block.text.strip()
-            if not paragraph_text:
-                continue
+
             if heading_level:
                 prefix = _HEADING_PREFIX_BY_LEVEL.get(heading_level, "###")
-                markdown_lines.append(f"{prefix} {paragraph_text}")
-            else:
+                if paragraph_text:
+                    markdown_lines.append(f"{prefix} {paragraph_text}")
+            elif paragraph_text:
                 markdown_lines.append(paragraph_text)
+
+            # 段内联图：占位符追加在文本行之后；纯图段（无文本）也产出占位行
+            placeholder_lines, fresh_images = _extract_paragraph_images(
+                block, document, source_stem, seen_image_ids
+            )
+            markdown_lines.extend(placeholder_lines)
+            images.extend(fresh_images)
+
         elif isinstance(block, _Table):
             markdown_lines.extend(_render_table_as_markdown(block))
-    return markdown_lines
+    return markdown_lines, images
 
 
 def _iter_block_items(document: _Document):
@@ -84,6 +118,48 @@ def _paragraph_heading_level(paragraph: _Paragraph) -> int | None:
     if style_name in ("Heading 3", "标题 3"):
         return 3
     return None
+
+
+def _extract_paragraph_images(
+    paragraph: _Paragraph,
+    document: _Document,
+    source_stem: str,
+    seen_image_ids: set[str],
+) -> tuple[list[str], list[ExtractedImage]]:
+    """段落内联图（w:drawing → a:blip）→ 占位符行 + 新图字节；重复图不再收集字节。"""
+    placeholder_lines: list[str] = []
+    fresh_images: list[ExtractedImage] = []
+
+    for blip_element in paragraph._element.iter(qn("a:blip")):
+        embed_id = blip_element.get(qn("r:embed")) or blip_element.get(qn("r:link"))
+        if not embed_id:
+            continue
+        try:
+            related_part = document.part.related_parts[embed_id]
+        except KeyError:
+            continue  # 关系缺失（损坏文档）：跳过该图，不阻断整段
+        image_bytes = related_part.blob
+        image_ext = _guess_image_ext(related_part.content_type, image_bytes)
+        image_id = make_image_id(source_stem, image_bytes)
+
+        placeholder_lines.append(f"[IMAGE:{image_id}]")
+        if image_id not in seen_image_ids:
+            seen_image_ids.add(image_id)
+            fresh_images.append(ExtractedImage(image_id=image_id, data=image_bytes, ext=image_ext))
+    return placeholder_lines, fresh_images
+
+
+def _guess_image_ext(content_type: str | None, image_bytes: bytes) -> str:
+    """扩展名：优先媒体类型映射，其次字节头嗅探（png/jpeg），兜底 png。"""
+    if content_type:
+        known_ext = _IMAGE_EXT_BY_CONTENT_TYPE.get(content_type.lower())
+        if known_ext:
+            return known_ext
+    if image_bytes.startswith(b"\x89PNG"):
+        return "png"
+    if image_bytes.startswith(b"\xff\xd8"):
+        return "jpg"
+    return "png"
 
 
 def _render_table_as_markdown(table: _Table) -> list[str]:

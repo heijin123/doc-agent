@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "version": "1.0",
+    "created": "2026-09-08",
+    "scope": "M4 初级版：跨 7 份真实语料文档，中英双语；覆盖 VLM 转录块/中文手册/公告事实型/年报大文档/表格型 PDF",
+    "fields": "id=用例号, query=评测提问, expect_doc=期望命中文档(doc_id), anchor=期望块内原文片段(定位期望块用, 空白与大小写不敏感), note=设计意图",
+    "metric_note": "recall@k=至少一个期望块出现在 top-k 的用例占比; MRR=首个期望块命中位置倒数均值; 门槛 recall@5>=0.8"
+  },
+  "cases": [
+    {
+      "id": "q01",
+      "query": "According to the paper's example, aside from the Apple Remote, what other device can control the program that the Apple Remote was designed to interact with?",
+      "expect_doc": "2_react_paper_en",
+      "anchor": "Aside from the Apple Remote, what other device can control the program",
+      "note": "R3 活体：答案在图内(红页 VLM 转录块 seq116)，跨语言英文提问；考核转录块可检索性"
+    },
+    {
+      "id": "q02",
+      "query": "Who are the authors of the ReAct paper and which university or research lab were they from?",
+      "expect_doc": "2_react_paper_en",
+      "anchor": "Synergizing Reasoning and Acting in Language Models",
+      "note": "论文标题页(文字快路径块 seq0)，英文事实型"
+    },
+    {
+      "id": "q03",
+      "query": "《Hermes Agent 从入门到精通》手册是基于什么机构开源的框架编写的实战指南？",
+      "expect_doc": "1_hermes_agent_manual_cn",
+      "anchor": "Nous Research 开源框架实战指南",
+      "note": "封面块 seq0，中文事实型(浅)"
+    },
+    {
+      "id": "q04",
+      "query": "Hermes 把 web、browser、image_gen、video_gen 这类外部能力做成插件后，是用什么交付形态组织的？",
+      "expect_doc": "1_hermes_agent_manual_cn",
+      "anchor": "一文件一后端",
+      "note": "架构章节(页41 附近两块 seq44/45 均提及)，中文概念型(中)"
+    },
+    {
+      "id": "q05",
+      "query": "按照手册的安全提醒，安装第三方 skill 或 plugin 之前应该怎么做？",
+      "expect_doc": "1_hermes_agent_manual_cn",
+      "anchor": "安装前审查",
+      "note": "安全章节(页81 seq90)，中文概念型(中)"
+    },
+    {
+      "id": "q06",
+      "query": "乐鑫科技本次回购股份方案的实施期限是？",
+      "expect_doc": "乐鑫科技：乐鑫科技关于以集中竞价交易方式回购公司股份比例累计达1%暨回购进展公告",
+      "anchor": "回购方案实施期限",
+      "note": "公告摘要块 seq0，中文事实型(浅)"
+    },
+    {
+      "id": "q07",
+      "query": "截至 2026 年 9 月 4 日，乐鑫科技通过集中竞价累计回购了多少股、占当时总股本的比例是多少？",
+      "expect_doc": "乐鑫科技：乐鑫科技关于以集中竞价交易方式回购公司股份比例累计达1%暨回购进展公告",
+      "anchor": "1,420,836",
+      "note": "摘要与正文(seq0/seq1)均含数字，中文事实型精确数字(中)"
+    },
+    {
+      "id": "q08",
+      "query": "奥比中光本次减持实施结果中，控股股东黄源浩先生通过集中竞价方式减持了多少股？",
+      "expect_doc": "奥比中光：控股股东、实际控制人及其一致行动人、部分董事、高级管理人员减持计划时间届满暨减持股份结果公告",
+      "anchor": "4,011,440",
+      "note": "减持结果章节(seq1/seq2 均含)，中文事实型精确数字(中)"
+    },
+    {
+      "id": "q09",
+      "query": "奥比中光职工代表董事张丁军先生持有的公司股份是什么来源？",
+      "expect_doc": "奥比中光：控股股东、实际控制人及其一致行动人、部分董事、高级管理人员减持计划时间届满暨减持股份结果公告",
+      "anchor": "股权激励取得",
+      "note": "减持前基本情况(seq1/seq5)，中文事实型(浅)"
+    },
+    {
+      "id": "q10",
+      "query": "天力锂能 2024 年年度报告的公告日期是什么时候？",
+      "expect_doc": "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）",
+      "anchor": "2025 年 4 月 29 日",
+      "note": "封面块 seq0，中文事实型(浅)"
+    },
+    {
+      "id": "q11",
+      "query": "天力锂能使用募集资金置换前期投入事项，是经公司哪一次董事会会议决议同意的？",
+      "expect_doc": "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）",
+      "anchor": "第三届董事会第十二次会议",
+      "note": "募集资金章节(seq38/seq40 相邻两页)，中文事实型(中)"
+    },
+    {
+      "id": "q12",
+      "query": "What is the stock code of Shanghai Zhenhua Heavy Industries Co., Ltd. shown in its Annual Report 2025?",
+      "expect_doc": "振华重工：振华重工2025年年度报告（英文版）",
+      "anchor": "600320",
+      "note": "英文年报封面(seq0)，大库 812 块下的精确事实型；600320 亦现于正文表(seq10)"
+    },
+    {
+      "id": "q13",
+      "query": "这张电子发票的发票号码和价税合计金额分别是多少？",
+      "expect_doc": "3_invoice_table_cn",
+      "anchor": "26362000001482530851",
+      "note": "表格型 1 页 PDF(列乱序文本)，中文事实型(中高)"
+    }
+  ]
+}

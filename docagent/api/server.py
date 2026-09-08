@@ -1,11 +1,13 @@
-"""doc-agent API 服务入口 —— 前端页面托管 + ingest 真实管线 + chat 占位
+"""doc-agent API 服务入口 —— 前端页面托管 + ingest 真实管线 + 问答真实链路
 
-当前状态：M1 收尾（2026-09-07）。
+当前状态：M3（2026-09-08）。
 - /chat、/upload：两个前端页面（问答 / 文档上传）
 - /health：存活检查
 - POST /api/v1/ingest：**真实摄取管线**（保存到 inbox → run_document 编排
   探测/解析/质量门/切片/落库 → 逐文档报告）；与 CLI `ingest` 同构
-- POST /api/v1/chat：演示占位（M3 接入问答编排 + 检索后替换实现）
+- POST /api/v1/chat：**真实问答链路**（run_question：检索 + 生成 + 引用溯源）；
+  响应 final_answer 含 [n] 角标 + sources（document_name/page_number/snippet）
+- GET /api/images/{image_id}：图片资源（引用块 [IMAGE] 占位渲染）
 
 ingest 契约（与 upload.html 对齐）：业务失败也返回 HTTP 200 + status=failed，
 网络错误才非 200 —— 页面据此区分"文档没解析成功"与"服务连不上"。
@@ -22,9 +24,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import config
+from ..images import repo as image_repo
 from ..ingest.pipeline import run_document
-
-CHAT_DEMO_MODE = True  # M3 接入真实问答编排后置 False
+from ..qa import run_question
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -52,7 +54,7 @@ def upload_page() -> FileResponse:
 # ---- 存活检查 ----
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "chat_demo_mode": CHAT_DEMO_MODE}
+    return {"status": "ok"}
 
 
 # ---- 文档摄取（M1 真实管线）----
@@ -99,30 +101,39 @@ def ingest_upload(file: UploadFile) -> JSONResponse:
     )
 
 
-# ---- 问答：演示占位（M3 接入真实编排 + 检索链路后替换）----
+# ---- 问答（M3 真实链路：检索 + 生成 + 引用溯源）----
 @app.post("/api/v1/chat")
-def chat_placeholder(payload: dict) -> dict:
+def chat_answer(payload: dict) -> dict:
     started_at = time.time()
     user_message = (payload.get("message") or "").strip()
     thread_id = payload.get("thread_id") or _new_thread_id()
+    if not user_message:
+        return {
+            "thread_id": thread_id,
+            "final_answer": "（空问题）请告诉我你想查什么。",
+            "sources": [],
+            "duration_s": round(time.time() - started_at, 2),
+        }
 
-    if CHAT_DEMO_MODE:
-        final_answer = (
-            f"（演示占位答复）我已收到你的问题：「{user_message[:60]}」。\n"
-            "问答链路将在 M3 接入：知识库检索 → 引用溯源 → 编排答复。当前页面骨架可正常交互。"
-        )
-        sources: list[dict] = []
-    else:
-        # 真实实现入口：编排 graph 调用 + 检索结果组装 sources
-        final_answer = ""
-        sources = []
-
+    outcome = run_question(user_message)
     return {
         "thread_id": thread_id,
-        "final_answer": final_answer,
-        "sources": sources,
+        "final_answer": outcome["answer"],
+        "sources": outcome["sources"],
+        "degraded": outcome["degraded"],
+        "usage": outcome["usage"],
+        "note": outcome.get("note"),
         "duration_s": round(time.time() - started_at, 2),
     }
+
+
+# ---- 图片资源（M3 展示层：引用块内的 [IMAGE:xxx] 由前端按此地址渲染）----
+@app.get("/api/images/{image_id}", response_model=None)
+def serve_image(image_id: str):
+    image_path = image_repo.resolve_file_path(image_id)
+    if image_path is None:
+        return JSONResponse({"error": f"图片不存在: {image_id}"}, status_code=404)
+    return FileResponse(str(image_path))
 
 
 def _new_thread_id() -> str:

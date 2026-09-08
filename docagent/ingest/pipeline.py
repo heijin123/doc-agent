@@ -10,12 +10,17 @@
     的条件边，内层仍不动。
 
 M1 节点（每文档一条流水线，批次层 for 串行调用，Send 并行留 M2+）：
-    detect → parse → gate → chunk → store
+    detect → parse → gate → [红页 → vlm] → chunk → store → save_images
     - detect：扩展名 + 内容嗅探识别格式；不支持 → FAIL 出口
     - parse ：PDF 一次打开完成逐页取文本 + 质量门判级（assess_pdf）；非 PDF 空转
-    - gate  ：M1 只把判级结果整理进报告（红页记录在案，VLM 补全是 M2 锚点）
-    - chunk ：复用 chunk_document（分格式定制切片，纯函数层零改动）
+    - gate  ：把红黄绿统计整理进报告（红页号记录在案，驱动 vlm 条件路由）
+    - vlm（M2，2026-09-08）：红页整页渲染 → qwen-vl 转录，产物 {页号: 文本}
+      进 state，chunk 消费时替换该页原文（同块位 id 不变、md5 变 → upsert 覆盖
+      存量乱码块，自愈无需删除）；无 Key/失败 → 降级 note，红页保持原文入库
+    - chunk ：复用 chunk_document（分格式定制切片 + 图片占位提取 + 红页转录注入）
     - store ：查库 diff（md5）→ 命中跳过 / 变化块才 embedding + upsert（幂等）
+    - save_images（2026-09-08）：文档入库成功后，把切块提取的图片落盘+登记
+      sqlite（幂等）；图片是附属展示资源——落盘失败只记 note，不判文档 failed
 
 每个节点后的条件边：节点内异常一律转为 error 字段 + status=failed，
 图优雅收尾返回报告而非抛异常 —— 单文档失败不拖垮整批（demo1 教训）。
@@ -28,7 +33,10 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from .. import config
+from ..images import repo as image_repo
 from ..vectorstore import store as vector_store
+from . import vlm_transcribe
 from .chunk_models import ChunkingResult
 from .chunking import chunk_document
 from .file_type_detection import UnsupportedFileError, detect_file_type
@@ -53,6 +61,14 @@ class IngestState(TypedDict, total=False):
     error: str | None               # failed 时的原因（进报告）
     stored: int                     # 本次实际 upsert 块数
     skipped: int                    # md5 命中跳过块数
+    images_saved: int               # 本次实际落盘图片数（save_images）
+    images_skipped: int             # 已存在跳过数（幂等重跑）
+    image_note: str | None          # 图片落盘失败等附属告警（不判 failed）
+    vlm_transcripts: dict | None    # vlm 产物：{页号: 转录文本}（chunk 消费）
+    vlm_pages: int                  # 成功转录页数
+    vlm_failed: list | None         # 转录失败页（保留原文）
+    vlm_note: str | None            # 无 Key / 超上限 / 失败 说明
+    vlm_usage: dict | None          # token 成本 {prompt_tokens, completion_tokens}
     timings: dict[str, float]       # 每节点耗时（秒），报告 / 延迟优化的依据
 
 
@@ -102,11 +118,7 @@ def parse_node(state: IngestState) -> dict:
 
 
 def gate_node(state: IngestState) -> dict:
-    """质量门：M1 把红黄绿统计与红页原因整理进报告。
-
-    M2 锚点：这里读 state.quality 后走条件边"红页数 > 0 → VLM 转录节点"，
-    再回接 chunk；M1 无慢路径，红页文本仍照常入块（不越权修补）。
-    """
+    """质量门：把红黄绿统计与红页原因整理进报告（红页号驱动 vlm 条件路由）。"""
     quality_raw = state.get("quality_raw")
     if not quality_raw:
         return {}
@@ -122,11 +134,63 @@ def gate_node(state: IngestState) -> dict:
     }
 
 
+def vlm_node(state: IngestState) -> dict:
+    """慢路径兜底（M2）：质量门红页 → 整页渲染 → qwen-vl 转录。
+
+    无 Key / 转录失败 → 降级：红页保持原文入块（M1 行为），只记 note 不判 failed。
+    转录页数受 VLM_MAX_PAGES_PER_DOC 护栏（成本保护），超出部分报告标注。
+    """
+    quality_raw = state.get("quality_raw") or {}
+    red_pages = list(quality_raw.get("red_pages") or [])
+    if not red_pages:
+        return {}
+
+    start = time.perf_counter()
+    # 降级一致性：未配 Key 或显式 mock provider 环境（verify/无预算）都不调 VLM
+    if not config.DASHSCOPE_API_KEY or config.EMBEDDING_PROVIDER == "mock":
+        reason = "未配 DASHSCOPE_API_KEY" if not config.DASHSCOPE_API_KEY else "mock provider 环境"
+        return {
+            "vlm_pages": 0,
+            "vlm_note": f"{reason}：{len(red_pages)} 个红页未转录（保持原文入库）",
+            "timings": _timed(state, "vlm", time.perf_counter() - start),
+        }
+
+    try:
+        transcripts, usage_total, failed_pages = vlm_transcribe.transcribe_pages(
+            Path(state["file_path"]),
+            red_pages,
+            max_pages=config.VLM_MAX_PAGES_PER_DOC,
+        )
+        note_parts: list[str] = []
+        if failed_pages:
+            note_parts.append(f"{len(failed_pages)} 页转录失败保留原文: P{failed_pages[:5]}")
+        over_limit = len(red_pages) - config.VLM_MAX_PAGES_PER_DOC
+        if over_limit > 0:
+            note_parts.append(f"超过单文档转录上限，{over_limit} 页未转录")
+        return {
+            "vlm_transcripts": transcripts,
+            "vlm_pages": len(transcripts),
+            "vlm_failed": failed_pages,
+            "vlm_usage": usage_total,
+            "vlm_note": "；".join(note_parts) if note_parts else None,
+            "timings": _timed(state, "vlm", time.perf_counter() - start),
+        }
+    except Exception as exc:
+        return {
+            "vlm_pages": 0,
+            "vlm_note": f"VLM 转录异常: {exc}",
+            "timings": _timed(state, "vlm", time.perf_counter() - start),
+        }
+
+
 def chunk_node(state: IngestState) -> dict:
-    """按格式定制切片（复用 chunk_document，纯函数层零改动）。"""
+    """按格式定制切片（复用 chunk_document；红页转录文本经 vlm_transcripts 注入）。"""
     start = time.perf_counter()
     try:
-        result = chunk_document(Path(state["file_path"]))
+        result = chunk_document(
+            Path(state["file_path"]),
+            vlm_transcripts=state.get("vlm_transcripts"),
+        )
         return {
             "chunking": result,
             "document_type": result.document_type,
@@ -166,10 +230,46 @@ def store_node(state: IngestState) -> dict:
         }
 
 
-# ---------------- 条件路由 ----------------
+# ---------------- 条件路由与图片落盘 ----------------
 
 def _is_failed(state: IngestState) -> bool:
     return state.get("status") == "failed"
+
+
+def save_images_node(state: IngestState) -> dict:
+    """把切块提取的图片落盘 + sqlite 登记（幂等）。
+
+    图片是块的附属展示资源：落盘失败只记 note 进报告，不判文档 failed——
+    文档主链路（向量入库）不受图资源问题拖累。
+    """
+    chunking = state.get("chunking")
+    if not chunking or not chunking.images:
+        return {"images_saved": 0, "images_skipped": 0}
+
+    start = time.perf_counter()
+    try:
+        outcome = image_repo.save_images(state["doc_id"], chunking.images)
+        return {
+            "images_saved": outcome["saved"],
+            "images_skipped": outcome["skipped"],
+            "timings": _timed(state, "save_images", time.perf_counter() - start),
+        }
+    except Exception as exc:
+        return {
+            "image_note": f"图片落盘失败: {exc}",
+            "timings": _timed(state, "save_images", time.perf_counter() - start),
+        }
+
+
+def _route_after_gate(state: IngestState) -> str:
+    """gate 后三分支：failed → END；PDF 且含红页 → vlm 慢路径；否则 → chunk。"""
+    if _is_failed(state):
+        return "fail"
+    quality_raw = state.get("quality_raw") or {}
+    is_pdf_with_red_pages = (
+        state.get("document_type") == "pdf" and bool(quality_raw.get("red_pages"))
+    )
+    return "vlm" if is_pdf_with_red_pages else "chunk"
 
 
 # ---------------- 图 ----------------
@@ -180,22 +280,35 @@ def build_ingest_graph():
     graph.add_node("detect", detect_node)
     graph.add_node("parse", parse_node)
     graph.add_node("gate", gate_node)
+    graph.add_node("vlm", vlm_node)
     graph.add_node("chunk", chunk_node)
     graph.add_node("store", store_node)
+    graph.add_node("save_images", save_images_node)
 
     graph.set_entry_point("detect")
     for node_name, next_node in [
         ("detect", "parse"),
         ("parse", "gate"),
-        ("gate", "chunk"),
-        ("chunk", "store"),
     ]:
         graph.add_conditional_edges(
             node_name,
             lambda state: "fail" if _is_failed(state) else "ok",
             {"ok": next_node, "fail": END},
         )
-    graph.add_edge("store", END)
+    graph.add_conditional_edges("gate", _route_after_gate, {"vlm": "vlm", "chunk": "chunk", "fail": END})
+    graph.add_edge("vlm", "chunk")  # vlm 内部已降级兜底，不外抛，无需失败边
+    graph.add_conditional_edges(
+        "chunk",
+        lambda state: "fail" if _is_failed(state) else "ok",
+        {"ok": "store", "fail": END},
+    )
+    # store 成功（ok/skipped）才落图；store 失败直接收尾（图留待下次重跑补）
+    graph.add_conditional_edges(
+        "store",
+        lambda state: "fail" if _is_failed(state) else "ok",
+        {"ok": "save_images", "fail": END},
+    )
+    graph.add_edge("save_images", END)
     return graph.compile()
 
 
@@ -244,6 +357,14 @@ def run_document(file_path, graph=None) -> dict:
         "chunks": len(chunking.chunks) if chunking else 0,
         "stored": final.get("stored", 0),
         "skipped": final.get("skipped", 0),
+        "images": len(chunking.images) if chunking else 0,  # 切块提取到的图数
+        "images_saved": final.get("images_saved", 0),
+        "images_skipped": final.get("images_skipped", 0),
+        "image_note": final.get("image_note"),
+        "vlm_pages": final.get("vlm_pages", 0),
+        "vlm_failed": final.get("vlm_failed") or [],
+        "vlm_note": final.get("vlm_note"),
+        "vlm_usage": final.get("vlm_usage") or {},
         "provider": embedding.get("provider"),
         "degraded": embedding.get("degraded", False),
         "error": final.get("error"),

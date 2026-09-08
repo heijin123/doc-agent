@@ -18,9 +18,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-# ---- 环境前置（必须在 import docagent 之前）：mock 向量 + 临时 Chroma 目录 ----
+# ---- 环境前置（必须在 import docagent 之前）：mock 向量 + 临时 Chroma/图片目录 ----
 _TMP_DIR = Path(tempfile.mkdtemp(prefix="verify_ingest_m1_"))
-os.environ["DOCAGENT_CHROMA_DIR"] = str(_TMP_DIR)
+os.environ["DOCAGENT_CHROMA_DIR"] = str(_TMP_DIR / "chroma")
+os.environ["DOCAGENT_IMAGES_DIR"] = str(_TMP_DIR / "images")
+os.environ["DOCAGENT_IMAGES_DB"] = str(_TMP_DIR / "image_files.db")
 os.environ["EMBEDDING_PROVIDER"] = "mock"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
