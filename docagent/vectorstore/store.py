@@ -23,6 +23,7 @@ metadata 写入 chroma 的值需为标量（str/int/float/bool）；块溯源键
 from __future__ import annotations
 
 import hashlib
+import threading
 from datetime import datetime
 
 import chromadb
@@ -31,11 +32,24 @@ from .. import config
 from ..ingest.chunk_models import DocumentChunk
 from . import embedding as embed_module
 
+# ---- 并发安全（2026-09-09 修：多 worker 并发摄取会同时写同一 Chroma sqlite）----
+# 1) Chroma 要求同一路径只建一个 PersistentClient；原 get_collection 每次 new 一个，
+#    多 worker 并发 → "database is locked"/"SQLite objects created in a thread"。改为进程内单例。
+# 2) 嵌入 + 落库（sqlite 写）用一把进程级锁串行化：解析/切块仍并行，只有碰 Chroma
+#    与打 DashScope 的共享段串行，杜绝写锁争用（大文件长跑必炸）。
+_client = None
+_client_lock = threading.Lock()
+_store_lock = threading.Lock()
+
 
 def get_collection() -> chromadb.Collection:
-    """返回持久化 Collection（不存在则创建）。"""
-    db = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
-    return db.get_or_create_collection(name=config.COLLECTION_NAME)
+    """返回进程内唯一持久化 Collection（Chroma 要求同一路径只建一个 client）。"""
+    global _client
+    with _client_lock:
+        if _client is None:
+            db = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
+            _client = db.get_or_create_collection(name=config.COLLECTION_NAME)
+    return _client
 
 
 def _text_md5(text: str) -> str:
@@ -83,31 +97,29 @@ def upsert_doc_chunks(chunks: list[DocumentChunk], doc_id: str) -> dict:
             }
         )
 
-    # diff：查库内已有同 id 记录的 md5
-    db_result = collection.get(ids=[item["id"] for item in local_items])
-    db_md5_by_id = {
-        db_id: (meta or {}).get("md5")
-        for db_id, meta in zip(db_result["ids"], db_result["metadatas"])
-    }
-
-    to_upsert = []
+    # 串行化：diff 读 + 嵌入 + 落库 同持 _store_lock，保证同一时刻仅一个 worker 碰
+    # Chroma sqlite（与打 DashScope）。解析/切块在锁外并行，仅此共享段串行。
     skipped = 0
-    for item in local_items:
-        if db_md5_by_id.get(item["id"]) == item["metadata"]["md5"]:
-            skipped += 1  # 内容未变：不 touch，保留旧向量与旧 metadata
-        else:
-            to_upsert.append(item)
-
-    if not to_upsert:
-        return {"stored": 0, "skipped": skipped, **provider}
-
-    embeddings = embed_module.embed_texts([item["text"] for item in to_upsert])
-    collection.upsert(
-        ids=[item["id"] for item in to_upsert],
-        documents=[item["text"] for item in to_upsert],
-        embeddings=embeddings,
-        metadatas=[item["metadata"] for item in to_upsert],
-    )
+    with _store_lock:
+        db_result = collection.get(ids=[item["id"] for item in local_items])
+        db_md5_by_id = {
+            db_id: (meta or {}).get("md5")
+            for db_id, meta in zip(db_result["ids"], db_result["metadatas"])
+        }
+        to_upsert = [
+            item for item in local_items
+            if db_md5_by_id.get(item["id"]) != item["metadata"]["md5"]
+        ]
+        skipped = len(local_items) - len(to_upsert)
+        if not to_upsert:
+            return {"stored": 0, "skipped": skipped, **provider}
+        embeddings = embed_module.embed_texts([item["text"] for item in to_upsert])
+        collection.upsert(
+            ids=[item["id"] for item in to_upsert],
+            documents=[item["text"] for item in to_upsert],
+            embeddings=embeddings,
+            metadatas=[item["metadata"] for item in to_upsert],
+        )
     return {"stored": len(to_upsert), "skipped": skipped, **provider}
 
 

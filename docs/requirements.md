@@ -1,6 +1,6 @@
 # DocAgent — 文档智能 + RAG 工程（第 2 个 demo）需求文档
 
-> 版本：v1.1（2026-09-07，D4/D6 拍板 + M1 摄取编排落地回写，作为 M2-M4 施工依据）
+> 版本：v2.0（2026-09-09，M1-M4 全落地 + golden 定稿 20 条回写；README/架构图已同步）
 > 定位：求职第 2 个 demo 的需求规格。开发模式：**AI 共同开发（结对制）**——本文件是双方对齐的地图，里程碑逐段 review。
 
 ---
@@ -104,7 +104,7 @@ MinerU 本地集成 / 混合检索+RRF / RAGAS 端到端 / DOCX/PPT 解析完善
 | **LangGraph 数据流水线编排** | 不是对话图，是"状态机式摄取管线"：节点=六步、条件边=质量门分支、错误=单文档隔离 + 重试（体现同框架两种用法） |
 | 文档级知识 schema | doc_id 为根的父子结构（doc → page → block），溯源字段落 metadata |
 | 引用溯源链路 | 检索块 id → 答案句级标注 → 代码层幽灵引用剔除 |
-| 忠实性评估 | 答案断言 ↔ 引用块内容的自动核对（LLM-as-judge 或规则式，MVP 先规则式） |
+| 忠实性评估 | 答案断言 ↔ 引用块内容的自动核对（LLM-as-judge 或规则式）。**M4 收尾决策（2026-09-09）**：深度断言核对留 v1.1——MVP 以"引用可回查率 100%"（引用块必属本次检索块，代码层可验）代忠实性闸，先锁"答得出、出处在" |
 | 语料工程 | 造 5 类真实公开文档组成的演示语料（含 1 份已知坏字体页文档） |
 
 ### 4.3 语言与依赖
@@ -149,7 +149,7 @@ Python 3.13+，与 demo1 同栈（.venv 隔离）；新依赖控制在最小集�
 |---|---|---|---|
 | 解析层 | 每文档 10-15 条判别词 query | content_present / recall | 扩展 eval_parsing |
 | 检索层 | 问答 golden：query → 期望块集合 | recall@5 / MRR | verify_docqa.py |
-| 回答层 | 同批 query 的答案 | 忠实性（断言可在引用块中找到）/ 引用可回查率 100% | 规则 checker |
+| 回答层 | 同批 query 的答案 | 引用可回查率 100%（M4 实测 19/19 达成）/ 忠实性断言核对 v1.1 | 代码层回查（sources.block_id 必属检索块） |
 
 **回归门槛**（每里程碑过闸）：检索 recall@5 ≥ 0.8；引用可回查率 = 100%；全绿无失败文档。
 
@@ -169,15 +169,17 @@ Python 3.13+，与 demo1 同栈（.venv 隔离）；新依赖控制在最小集�
 
 ## 7. 验收清单（可测，最终 gate）
 
-| # | 验收项 | 判据 |
-|---|---|---|
-| R1 | 混合语料建库 | 5 类文档全入库；报告逐文档可解释 |
-| R2 | 质量门演示 | 含坏字体页文档被标红并走 VLM 补全；报告可见该页"转录回填" |
-| R3 | 图内文字可答 | 提问 P2 图内内容（Apple Remote 类），能答且带出处（沿用 q04/q05 实证） |
-| R4 | 问答 golden | 20 条 recall@5 ≥ 0.8；引用可回查率 100% |
-| R5 | 幽灵引用拦截 | 诱导模型引用不可见块 → 角标被剔除、无假出处（负例用例） |
-| R6 | 一键回归 | verify_docqa.py 全绿；报告含耗时与成本 |
-| R7 | 降级不崩 | 无 Key 环境跑通 S1/S2，报告标注降级 |
+| # | 验收项 | 判据 | 状态（M4 收尾 2026-09-09） |
+|---|---|---|---|
+| R1 | 混合语料建库 | 5 类文档全入库；报告逐文档可解释 | ✅ verify_ingest_m1/2 全绿；真库 1400 块（手册/论文/发票/公告×4/年报×2 + 生成样本） |
+| R2 | 质量门演示 | 含坏字体页文档被标红并走 VLM 补全；报告可见该页"转录回填" | ✅ react 5 红页 qwen-vl 真实转录闭环；verify_ingest_m2 15/15 |
+| R3 | 图内文字可答 | 提问 P2 图内内容（Apple Remote 类），能答且带出处（沿用 q04/q05 实证） | ✅ golden q01 常驻回归；判别词真实检索命中 figure_transcript 块 |
+| R4 | 问答 golden | 20 条 recall@5 ≥ 0.8；引用可回查率 100% | ✅ golden 定稿 20 条 × 9 文档；真实 recall@5=0.95 / MRR=0.882；答案层可回查率 100%（详见 §8 M4 行） |
+| R5 | 幽灵引用拦截 | 诱导模型引用不可见块 → 角标被剔除、无假出处（负例用例） | ✅ verify_docqa_m3 负例 + strip_out_of_range_citations 纯函数单测 |
+| R6 | 一键回归 | verify_docqa.py 全绿；报告含耗时与成本 | ✅ verify_docqa_m3/m4/date_metadata 等 8 脚本 261 断言；eval 报告含耗时与 usage 成本 |
+| R7 | 降级不崩 | 无 Key 环境跑通 S1/S2，报告标注降级 | ✅ 全套 verify 在 mock/无 Key 环境全绿，报告标注 degraded |
+
+> ⚠️ R4 的 q17（振华英文年报"净利归属股东"数字问）为**保留的诚实用例**：2026-09-09 真实检索 miss（期望块在 top1 文档内但排名>5）——表格断行文本 + 语义词在 812 块大库内分布广泛，单路向量召回不足。门槛 ≥0.8 非满分制，此用例留作 v1.1（rerank/表格增强）的评估基线，不以改 query 洗指标。
 
 ---
 
@@ -188,7 +190,7 @@ Python 3.13+，与 demo1 同栈（.venv 隔离）；新依赖控制在最小集�
 | M1 | ✅ 完成（2026-09-07）：项目骨架（FastAPI + CLI 同构）+ 摄取编排 v1 并入 LangGraph（5 节点 detect→parse→gate→chunk→store，每节点失败路由）+ POST /api/v1/ingest 真实端点 | 单文档入库 + 报告雏形；verify_ingest_m1 47/47 全绿 | pdf_to_markdown / quality_gate / vectorstore 经验 / demo1 server 骨架 |
 | M2 | 图片引用链路（✅ 2026-09-08：提取/占位符/image_ids/sqlite 仓库/编排落盘，D7）+ VLM 转录（✅ 2026-09-08 mock 15/15 + **真实链路闭环**：react 5 红页 qwen-vl 真实转录 → 判别词 Apple Remote/keyboard/Front Row 语义检索命中 P2 figure_transcript 块）。**v2 语义**：红页原文不可信不产块、转录块 figure_transcript 追加尾部（老块 id 不动、无平移无孤儿）、历史乱码块由 CLI `--rebuild` 显式重建 | R2/R3 过闸 | vlm_describe_figure + 图片仓库 |
 | M3 | 问答 Agent（✅ 2026-09-08：docagent/llm.py chat 封装 + qa.py 问答图 route→greet/search→answer→citations，幽灵引用代码层剔除 strip_out_of_range_citations + sources 契约 + 图片展示端点 /api/images/{id} + chat.html 渲染原图） | R3/R4/R5 过闸 | demo1 agents 骨架 |
-| M4 | 评估体系 + golden 定稿 + 文档收尾（README/架构图/面试叙事） | R1-R7 全绿 | eval_parsing 扩展 |
+| M4 | ✅ 完成（2026-09-09）：**golden 定稿 20 条 × 9 份真实语料**（新增正川/南卫公告年报，q14 年份护栏活体）+ eval 引擎（锚句定位期望块 / recall@5·MRR / 答案层引用可回查率 / 门槛判定 / 报告落盘）+ CLI `eval [--top-k N] [--answers]` + README/架构图同步 + 本文件 v2.0 回写。真实结果：**recall@5=0.95（19/20）、MRR=0.882、答案层 20/20 带引用、引用可回查率 100%**；q17 诚实用例 miss 记录于 §7 警告 | R1-R7 全绿（见 §7 勾选） | eval_parsing 扩展 |
 | v1.1（待定） | MinerU 集成 / 混合检索 RRF / 网页工作台 | 视真实场景与时间 | — |
 
 每里程碑结束：**可演示 + 结对 review + 需求文档回写（偏差记录）**。

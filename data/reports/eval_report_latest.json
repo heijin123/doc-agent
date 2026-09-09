@@ -1,24 +1,22 @@
 {
   "meta": {
     "golden": "D:\\workspace\\doc-agent\\data\\golden\\qa_golden.json",
-    "cases_total": 13,
-    "golden_errors": [
-      "q05 query/anchor 过短，无法定位"
-    ],
+    "cases_total": 20,
+    "golden_errors": [],
     "provider": "dashscope",
     "degraded": false,
     "top_k": 5,
-    "with_answers": true,
-    "timestamp": "2026-09-08 15:13:19"
+    "with_answers": false,
+    "timestamp": "2026-09-09 10:07:12"
   },
   "retrieval": {
     "metrics": {
-      "cases": 13,
-      "recall": 1.0,
-      "mrr": 0.8846,
+      "cases": 20,
+      "recall": 0.95,
+      "mrr": 0.8816,
       "top_k": 5
     },
-    "elapsed_s": 5.1,
+    "elapsed_s": 7.35,
     "defects": [],
     "rows": [
       {
@@ -36,7 +34,7 @@
         "hit": true,
         "rank": 1,
         "top1_doc": "2_react_paper_en",
-        "top1_distance": 0.4098
+        "top1_distance": 0.4097
       },
       {
         "id": "q02",
@@ -53,7 +51,7 @@
         "hit": true,
         "rank": 2,
         "top1_doc": "2_react_paper_en",
-        "top1_distance": 0.6073
+        "top1_distance": 0.6071
       },
       {
         "id": "q03",
@@ -88,7 +86,7 @@
         "hit": true,
         "rank": 1,
         "top1_doc": "1_hermes_agent_manual_cn",
-        "top1_distance": 0.3974
+        "top1_distance": 0.3973
       },
       {
         "id": "q05",
@@ -158,7 +156,7 @@
         "hit": true,
         "rank": 2,
         "top1_doc": "奥比中光：控股股东、实际控制人及其一致行动人、部分董事、高级管理人员减持计划时间届满暨减持股份结果公告",
-        "top1_distance": 0.2763
+        "top1_distance": 0.2764
       },
       {
         "id": "q09",
@@ -247,132 +245,141 @@
         "rank": 1,
         "top1_doc": "3_invoice_table_cn",
         "top1_distance": 0.6688
+      },
+      {
+        "id": "q14",
+        "expected": [
+          "正川股份：2026年半年度报告摘要（修订版）:0",
+          "正川股份：2026年半年度报告摘要（修订版）:1"
+        ],
+        "retrieved": [
+          "正川股份：2026年半年度报告摘要（修订版）:0",
+          "正川股份：2026年半年度报告摘要（修订版）:1",
+          "正川股份：2026年半年度报告摘要（修订版）:2",
+          "正川股份：2026年半年度报告摘要（修订版）:3",
+          "振华重工：振华重工2025年年度报告（英文版）:345"
+        ],
+        "hit": true,
+        "rank": 1,
+        "top1_doc": "正川股份：2026年半年度报告摘要（修订版）",
+        "top1_distance": 0.3288
+      },
+      {
+        "id": "q15",
+        "expected": [
+          "正川股份：2026年半年度报告摘要（修订版）:2"
+        ],
+        "retrieved": [
+          "正川股份：2026年半年度报告摘要（修订版）:2",
+          "正川股份：2026年半年度报告摘要（修订版）:0",
+          "正川股份：2026年半年度报告摘要（修订版）:1",
+          "正川股份：2026年半年度报告摘要（修订版）:3",
+          "振华重工：振华重工2025年年度报告（英文版）:46"
+        ],
+        "hit": true,
+        "rank": 1,
+        "top1_doc": "正川股份：2026年半年度报告摘要（修订版）",
+        "top1_distance": 0.3599
+      },
+      {
+        "id": "q16",
+        "expected": [
+          "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告:0",
+          "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告:1"
+        ],
+        "retrieved": [
+          "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告:1",
+          "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告:0",
+          "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告:2",
+          "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告:3",
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:273"
+        ],
+        "hit": true,
+        "rank": 1,
+        "top1_doc": "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告",
+        "top1_distance": 0.2741
+      },
+      {
+        "id": "q17",
+        "expected": [
+          "振华重工：振华重工2025年年度报告（英文版）:11",
+          "振华重工：振华重工2025年年度报告（英文版）:12",
+          "振华重工：振华重工2025年年度报告（英文版）:301",
+          "振华重工：振华重工2025年年度报告（英文版）:330"
+        ],
+        "retrieved": [
+          "振华重工：振华重工2025年年度报告（英文版）:0",
+          "振华重工：振华重工2025年年度报告（英文版）:341",
+          "振华重工：振华重工2025年年度报告（英文版）:75",
+          "振华重工：振华重工2025年年度报告（英文版）:303",
+          "振华重工：振华重工2025年年度报告（英文版）:273"
+        ],
+        "hit": false,
+        "rank": null,
+        "top1_doc": "振华重工：振华重工2025年年度报告（英文版）",
+        "top1_distance": 0.2996
+      },
+      {
+        "id": "q18",
+        "expected": [
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:11"
+        ],
+        "retrieved": [
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:12",
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:13",
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:42",
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:11",
+          "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）:183"
+        ],
+        "hit": true,
+        "rank": 4,
+        "top1_doc": "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）",
+        "top1_distance": 0.4211
+      },
+      {
+        "id": "q19",
+        "expected": [
+          "2_react_paper_en:0",
+          "2_react_paper_en:1",
+          "2_react_paper_en:122"
+        ],
+        "retrieved": [
+          "2_react_paper_en:122",
+          "2_react_paper_en:1",
+          "2_react_paper_en:37",
+          "2_react_paper_en:0",
+          "2_react_paper_en:9"
+        ],
+        "hit": true,
+        "rank": 1,
+        "top1_doc": "2_react_paper_en",
+        "top1_distance": 0.3052
+      },
+      {
+        "id": "q20",
+        "expected": [
+          "1_hermes_agent_manual_cn:1",
+          "1_hermes_agent_manual_cn:26"
+        ],
+        "retrieved": [
+          "1_hermes_agent_manual_cn:26",
+          "1_hermes_agent_manual_cn:29",
+          "1_hermes_agent_manual_cn:1",
+          "1_hermes_agent_manual_cn:27",
+          "1_hermes_agent_manual_cn:8"
+        ],
+        "hit": true,
+        "rank": 1,
+        "top1_doc": "1_hermes_agent_manual_cn",
+        "top1_distance": 0.2863
       }
     ]
   },
-  "answer": {
-    "elapsed_s": 28.2,
-    "degraded": false,
-    "cases_total": 13,
-    "referenced_cases": 13,
-    "traceable_rate": 1.0,
-    "usage": {
-      "prompt_tokens": 28210,
-      "completion_tokens": 772,
-      "total_tokens": 28982
-    },
-    "rows": [
-      {
-        "id": "q01",
-        "answer": "According to the paper's ReAct example, the Apple Remote was originally designed to interact with the Front Row media center program, and Front Row (software) is controlled by an Apple Remote or the keyboard function keys [2]. Therefore, aside from the Apple Remote, the keyboard function keys can control Front Row.",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q02",
-        "answer": "The authors of the ReAct paper are Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. Shunyu Yao and Karthik Narasimhan are from the Department of Computer Science, Princeton University [2]. Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, and Yuan Cao are from Google Research, Brain team [2].",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q03",
-        "answer": "《Hermes Agent 从入门到精通》手册是基于 Nous Research 开源的 Hermes Agent 框架编写的实战指南 [1]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q04",
-        "answer": "Hermes 将 web、browser、image_gen、video_gen 这四类外部能力全部拆成了 `plugins` 目录下「一文件一后端」的插件形态，即每个能力对应一个独立的文件夹（如 `image_gen` 下含 `fal`、`krea` 等 provider 子目录），每个插件包含完整的后端实现 [1]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q05",
-        "answer": "根据手册的安全提醒，安装第三方 skill 或 plugin 之前，必须**亲自审查其 Python 源代码**，而不能仅依赖 SKILL.md 等描述文件[1][3]。这是因为第三方 skill 和 plugin 在 `import` 时即以完整 Agent 权限执行任意 Python 代码，可读取内存中的凭证、调用工具等，其安全边界唯一且明确地落在“安装前 operator 自己审查代码”这一动作上[3]。文档强调：“安装前审查”是唯一有效的缓解措施，翻译过来就是“装之前你得自己读一遍那段 Python”[1]。",
-        "source_count": 2,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q06",
-        "answer": "乐鑫科技本次回购股份方案的实施期限为2026年8月18日至2026年11月17日[1]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q07",
-        "answer": "截至2026年9月4日，乐鑫科技通过集中竞价交易方式累计回购公司股份1,420,836股，占公司总股本234,384,311股的比例为0.6062%[2]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": "知识库无 [2026] 年相关文档，已按语义不限年份检索（“乐鑫科技：乐鑫科技关于以集中竞价交易方式回购公司股份比例累计达1%暨回购进展公告” 的近期文档）"
-      },
-      {
-        "id": "q08",
-        "answer": "根据公告，控股股东黄源浩先生在本次减持实施结果中，通过集中竞价方式减持了3,056,342股[3]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q09",
-        "answer": "奥比中光职工代表董事张丁军先生持有的公司股份来源分为两类：  \n- 其中 **9,603,000 股** 来源于 IPO 前取得 [1]；  \n- 另有 **31,200 股** 来源于股权激励 [2]。",
-        "source_count": 2,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q10",
-        "answer": "天力锂能 2024 年年度报告的公告日期是 2025 年 4 月 29 日 [1]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q11",
-        "answer": "天力锂能使用募集资金置换前期投入事项，是经**2022年9月13日公司第三届董事会第十二次会议**决议同意的[1]。",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q12",
-        "answer": "The stock code of Shanghai Zhenhua Heavy Industries Co., Ltd. is 600320 and 900947 [1].",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      },
-      {
-        "id": "q13",
-        "answer": "发票号码：26362000001482530851  \n价税合计（小写）：¥428.00 [1]",
-        "source_count": 1,
-        "traceable": true,
-        "untraceable_ids": [],
-        "note": null
-      }
-    ]
-  },
+  "answer": null,
   "gate": {
     "passed": true,
     "checks": [
-      "recall@5 = 1.0（门槛 ≥ 0.8，13 用例）",
-      "引用可回查率 = 1.0（门槛 1.0，13 条带引用）"
+      "recall@5 = 0.95（门槛 ≥ 0.8，20 用例）"
     ]
   }
 }

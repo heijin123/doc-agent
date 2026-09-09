@@ -31,6 +31,11 @@ INBOX_DIR = Path(os.getenv("DOCAGENT_INBOX_DIR", str(BASE_DIR / "data" / "inbox"
 IMAGES_DIR = Path(os.getenv("DOCAGENT_IMAGES_DIR", str(BASE_DIR / "data" / "images")))
 IMAGES_DB_PATH = Path(os.getenv("DOCAGENT_IMAGES_DB", str(BASE_DIR / "data" / "image_files.db")))
 
+# ---- 切片检查缓存（调试辅助，非入库链路）----
+# 切好的块原样落盘一份可读 md（每文档一个文件，覆盖写），摄取后打开即可人工抽查
+# 切片质量（跨页表格是否断裂 / 块大小 / page·block_type 标记）；写入失败不影响摄取
+CHUNK_CACHE_DIR = Path(os.getenv("DOCAGENT_CHUNK_CACHE_DIR", str(BASE_DIR / "data" / "chunk")))
+
 # ---- Embedding ----
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "dashscope").strip().lower()
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")

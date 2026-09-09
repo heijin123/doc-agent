@@ -25,7 +25,7 @@
                                                             ─▶ sources（引用溯源契约）
 
 评估侧（M4）
-  data/golden 13 条 ─▶ 期望块定位（anchor 锚句）─▶ recall@5 / MRR
+  data/golden 20 条 ─▶ 期望块定位（anchor 锚句）─▶ recall@5 / MRR
      ─▶（--answers，需真 Key）引用可回查率 ─▶ 门槛判定 R1–R7 ─▶ data/reports/*.json
 ```
 
@@ -80,6 +80,9 @@ RAG 检索质量的天花板在**摄取（数据侧）**，但市面上多数 de
 | **同构三入口** | CLI（`ingest`/`eval`）、FastAPI（`/api/v1/ingest` + `/api/v1/chat`）、Web 页面调用同一份编排与问答代码 |
 | **评估体系** | golden 检索 recall@5/MRR + 答案层引用可回查率 + 门槛判定；`data/reports/eval_report_latest.json` 落盘 |
 | **VLM 转录真实闭环** | react 论文 5 红页 qwen-vl 转录（28–48s/页），Apple Remote / keyboard / Front Row 判别词全部命中转录块（R3 实证） |
+| **切片质量缓存** | 切完即落盘 `data/chunk/{stem}.md`（逐块带 `块N｜chars｜block_type｜page｜section｜doc_date｜image_ids` 标记），人工抽查切片质量；调试辅助产物，写盘失败不影响主链路 |
+| **异步摄取（上传/处理解耦）** | `POST /api/v1/ingest` 落盘即返回 `job_id` + ETA，真正切片/入库在后台线程池并发执行，大文件不再阻塞后续上传；`/status` 轮询 + `/jobs` 回查 |
+| **持久化并发安全** | Chroma 进程内单例 client + 落库锁串行化（diff 读+embed+upsert 持锁），多 worker 并发摄取无锁冲突（实测 4 并发零错误） |
 
 ## 3. 技术栈
 
@@ -90,7 +93,7 @@ RAG 检索质量的天花板在**摄取（数据侧）**，但市面上多数 de
 | 文档解析 | PyMuPDF（PDF 快路径，`get_text("dict")` 版面块定位）/ python-docx / python-pptx / pandas+openpyxl |
 | 视觉转录 | Qwen-VL-Max（首选，失败降级 Plus），整页渲染 zoom=2 转录红页 |
 | 向量库 | Chroma（持久化，业务主键 `{doc_id}:{block_seq}`） |
-| Embedding | DashScope text-embedding-v3（OpenAI 兼容）/ mock 本地降级 |
+| Embedding | DashScope text-embedding-v3 / qwen3.7-text-embedding-flash（OpenAI 兼容，1024 维，可切换）/ mock 本地降级 |
 | 问答模型 | Qwen-Plus（OpenAI 兼容 chat，usage 统计成本） |
 | 图片仓库 | 文件系统 `data/images/{doc_id}/` + sqlite 登记（python 内置 sqlite3，幂等 INSERT OR IGNORE） |
 | API / 前端 | FastAPI + uvicorn / 原生 HTML/CSS/JS（无构建步骤，问答+上传两页） |
@@ -142,7 +145,7 @@ detect ─▶ parse ─┤                          ├─▶ chunk ─▶ store
 ### 4.3 评估体系（M4）
 
 ```
-data/golden/qa_golden.json（13 条 × 7 份真实语料）
+data/golden/qa_golden.json（20 条 × 9 份真实语料，v2.0 定稿）
   → validate_golden（缺字段/重复 id/锚句过短）
   → 期望块定位（anchor 归一化子串匹配全库，命中即期望块集合；缺陷用例不计指标分母）
   → 检索层：recall@5（至少一个期望块进 top-k 的用例占比）+ MRR
@@ -150,7 +153,7 @@ data/golden/qa_golden.json（13 条 × 7 份真实语料）
   → 门槛判定（R4：真向量 recall@5≥0.8；mock 无语义 SKIP 只保链路）→ data/reports/eval_report_latest.json
 ```
 
-真实首跑：**recall@5 = 1.0、MRR = 0.885、答案层 13/13 带引用、可回查率 100%**（13 次 qwen-plus，prompt ~28k tokens）。
+定稿实测（2026-09-09）：**recall@5 = 0.95（19/20）、MRR = 0.882、答案层 20/20 带引用、可回查率 100%**（20 次 qwen-plus，chat tokens 44k）。q17（振华英文年报净利数字问）为**保留的诚实用例**——表格断行文本 + 语义词在 812 块大库内分布广泛致单路向量召回 miss（检索 miss 时模型引用仍可回查，但答案依据弱——实证"可回查≠答对"，忠实性断言核对留 v1.1），作 rerank/表格增强的评估基线，不以改 query 洗指标。
 
 ### 4.4 Embedding 降级设计
 
@@ -165,6 +168,31 @@ EMBEDDING_PROVIDER=dashscope（默认）     未配 DASHSCOPE_API_KEY
 摄取报告 / API 响应 / 问答结果均标注 `provider` 与 `degraded`，降级不掩盖。问答 chat 与 VLM 转录共用同一把 Key，无 Key 时各自降级（问答仍走检索链路、转录跳过红页保持原文），全链路不崩（R7）。
 
 > ⚠️ 两 provider 向量维度不同（1024 vs 256），**同一 Chroma 库内混用会报维度错误**——切换 provider 后需清空 `data/chroma_db` 重灌。同理，**metadata 结构变更不触发增量重嵌**（md5 只算文本），存量库需用脚本显式升级（见 §9 的一次性迁移脚本）。
+
+### 4.5 异步摄取架构与并发落库（2026-09-09）
+
+上传与处理解耦：原来 `/api/v1/ingest` 在请求线程内同步跑完整管线，大文件（如 220 页年报）会长时间占住请求、串行上传时一个大文件阻塞其后所有文件。改为三层：
+
+```
+上传（请求线程，毫秒级）
+  └─ 落盘 inbox + 估算页数/ETA ─▶ 立即返回 { job_id, status:"queued",
+        pages, eta_seconds, message:"已接收，后台处理中，预计约 N 分钟 后可查询" }
+  └─ executor.submit(_process_job)        # ThreadPoolExecutor（DOCAGENT_INGEST_WORKERS 默认 2）
+        └─ 后台线程：run_document（探测→解析→质量门→[vlm]→切片→落库→save_images）
+              └─ 结果写回内存 job 注册表 _INGEST_JOBS[job_id]
+
+前端：拿 job_id 即翻「处理中」（不确定动画） ─▶ GET /api/v1/ingest/status?job_id= 轮询
+      └─ queued/processing/done/failed + waited_s/remaining_s
+      └─ GET /api/v1/ingest/jobs 返回全部任务倒序快照（“最近上传记录”面板回查）
+```
+
+**设计要点**
+- **ETA 估算不阻塞**：pymupdf 速读页数 × `DOCAGENT_INGEST_SEC_PER_PAGE`（默认 2.0s/页）；非 PDF 按文件大小粗估，仅给提示，不卡上传响应。
+- **并发落库安全**：多 worker 同时写同一 Chroma sqlite 会触发 `database is locked`——`store.get_collection()` 改为进程内**单例 client**，并把「diff 读 + embed + upsert」用一把进程级锁 `_store_lock` 串行化（解析/切块仍在锁外并行，仅碰 Chroma 与打 DashScope 的共享段串行）。实测 4 并发各 120 块 → 0 错误、幂等正确、库内 480 块。
+- **任务注册表内存态**：`_INGEST_JOBS` 为进程内字典，服务重启清空未完成任务（已知边界，当前不持久化；符合不过度设计）。超 200 条自动回收最旧已完结项。
+- **契约一致性**：业务失败仍返回 HTTP 200 + `status=failed`（仅落盘失败才非 200），前端据此区分「文档没解析成功」与「服务连不上」。
+
+> ⚠️ 上传页「最近上传记录」面板的 HTML 容器已就位，但**轮询回填的 JS 逻辑尚未接入**（服务端 `/jobs`、`/status` 已可用）；当前页面上传后能在「处理中」停留并展示 ETA，面板回查待补（见 §12 已知局限）。
 
 ## 5. 快速开始
 
@@ -223,43 +251,68 @@ EMBEDDING_PROVIDER=dashscope         # dashscope（默认）| mock
 | 端点 | 说明 |
 |---|---|
 | `GET /health` | 存活检查 |
-| `POST /api/v1/ingest` | 单文件上传 → 真实摄取管线（保存 inbox → 编排 → 逐文档报告） |
+| `POST /api/v1/ingest` | 异步摄取：落盘 inbox 即返回 `job_id` + `eta_seconds`，后台线程池并发处理；业务失败返回 HTTP 200 + `status=failed`（落盘失败才非 200） |
+| `GET /api/v1/ingest/status?job_id=` | 轮询任务状态：`queued/processing/done/failed` + `waited_s/remaining_s` |
+| `GET /api/v1/ingest/jobs` | 全部任务精简快照（倒序），供「最近上传记录」面板回查；任务注册表内存态，重启清空 |
 | `POST /api/v1/chat` | 问答：`{"message": "…"}` → `final_answer`（含 `[n]` 角标）+ `sources`（溯源契约）+ `usage`/`note` |
 | `GET /api/images/{image_id}` | 图片资源：命中块内 `[IMAGE:xxx]` 占位由前端按此地址渲染原图 |
 
 ```bash
-# 摄取
+# 异步摄取：上传即返回 job_id + ETA，真正切片/入库在后台跑
 curl -F "file=@data/samples/generated/sample_notes.txt" http://127.0.0.1:8001/api/v1/ingest
+# 轮询状态（用上面返回的 job_id）
+curl "http://127.0.0.1:8001/api/v1/ingest/status?job_id=ing_xxxxxxxxxxxx"
+# 查看全部任务（最近上传记录面板数据源）
+curl "http://127.0.0.1:8001/api/v1/ingest/jobs"
 # 问答
 curl -X POST http://127.0.0.1:8001/api/v1/chat -H "Content-Type: application/json" \
      -d '{"message": "Hermes 手册里如何安装插件？"}'
 ```
 
-ingest 响应示例：
+ingest 上传响应示例（立即返回，不等处理）：
 
 ```json
 {
+  "job_id": "ing_a1b2c3d4e5f6",
   "filename": "sample_notes.txt",
-  "status": "ok",
-  "pages_parsed": null,
-  "chunks_created": 4,
-  "stored": 4,
-  "skipped": 0,
-  "format": "txt",
-  "provider": "dashscope",
-  "degraded": false,
-  "error": null,
-  "elapsed_s": 1.32
+  "status": "queued",
+  "pages": null,
+  "eta_seconds": 20,
+  "message": "已接收，后台处理中，预计约 20 秒 后可查询"
 }
 ```
 
-> 契约约定：**业务失败也返回 HTTP 200 + `status=failed`**（网络错误才非 200），前端据此区分「文档没解析成功」与「服务连不上」。
+轮询 `/status` 终态响应示例（done）：
+
+```json
+{
+  "job_id": "ing_a1b2c3d4e5f6",
+  "filename": "sample_notes.txt",
+  "status": "done",
+  "pages": null,
+  "eta_seconds": 20,
+  "waited_s": 18,
+  "remaining_s": 0,
+  "result": {
+    "status": "ok",
+    "chunks_created": 4,
+    "stored": 4,
+    "skipped": 0,
+    "format": "txt",
+    "provider": "dashscope",
+    "degraded": false,
+    "elapsed_s": 1.32
+  }
+}
+```
+
+> 契约约定：**业务失败也返回 HTTP 200 + `status=failed`**（网络错误才非 200），前端据此区分「文档没解析成功」与「服务连不上」。轮询同理：处理失败的任务 `status` 为 `failed` 且 `result`/`error` 带原因，HTTP 仍 200。
 
 ### 5.6 演示语料说明
 
 - `data/samples/generated/`（md/txt/json/docx/xlsx/pptx + 含图 PDF）由 `scripts/make_demo_samples.py` 生成，已随仓库提交，可直接摄取。
 - `data/samples/*.pdf`（真实语料：中文产品手册、react 英文论文、乱版电子发票、A 股公告与年报 ×6）**均不随仓库提交**（gitignore，面试演示用固定样本），清单与演示价值见 `data/samples/README.md`——clone 后需自行放回对应文件，`verify_chunking` / `verify_ingest_m1` / `verify_ingest_m2` 的 PDF 用例与 `data/golden/qa_golden.json` 的锚句才能全跑通（锚句定位依赖库内有原文）。
-- 评估资产：`data/golden/qa_golden.json`（13 条 golden）入库；运行产物 `data/reports/` 不入库（随跑随变）。
+- 评估资产：`data/golden/qa_golden.json`（**20 条 golden，v2.0 定稿**）入库；运行产物 `data/reports/` 不入库（随跑随变）。
 
 ## 6. 目录结构与文件职责
 
@@ -316,8 +369,10 @@ doc-agent/
 │   │                              #   search_docs(query, top_k, where)（年份过滤通道）
 │   │
 │   ├── api/                       # ── 服务侧 ──
-│   │   ├── server.py              # FastAPI：页面托管 + /health + POST ingest（真实管线）
-│   │   │                          #   + POST chat（真实问答）+ GET /api/images/{id}
+│   │   ├── server.py              # FastAPI：页面托管 + /health + POST ingest（异步：落盘即返
+│   │   │                          #   job_id+ETA，后台线程池跑真实管线）+ GET /status + GET /jobs
+│   │   │                          #   + POST chat（真实问答）+ GET /api/images/{id}；Chroma 单例
+│   │   │                          #   client + 落库锁串行化多 worker 并发
 │   │   └── static/
 │   │       ├── chat.html          # 问答页（M3 真链路：引用标签 + 命中块原图渲染）
 │   │       ├── upload.html        # 上传页（多文件/文件夹，已接 ingest 契约）
@@ -344,9 +399,10 @@ doc-agent/
 │   └── coding_standards.md        # 开发守则八条（防过度设计、人类化命名等）
 │
 └── data/                          # 运行时数据（chroma_db / inbox / images / image_files.db /
-    │                              #   markdown / reports 均 gitignore，不入库）
+    │                              #   markdown / chunk / reports 均 gitignore，不入库）
+    │                              #   chunk/：切片质量缓存（data/chunk/{stem}.md，调试辅助）
     ├── samples/                   # 演示语料（generated/ 入库；真实 *.pdf 自行放置）
-    ├── golden/qa_golden.json      # ★ M4 评估资产：13 条 golden（入库）
+    ├── golden/qa_golden.json      # ★ M4 评估资产：20 条 golden × 9 文档（v2.0 定稿，入库）
     └── reports/                   # 评估报告运行产物（gitignore，随跑随变）
 ```
 
@@ -430,6 +486,25 @@ doc-agent/
 
 上下文块头带「文档日期」，让模型自查年份错位；sources 契约透传 `doc_date`。局限：`doc_date` 源自文件名（标题无年份的公告无此键，会被年份过滤排除 → 走回退路径）；相对时间词（"去年/最新一期"）初级版不处理。
 
+### 7.7 切片质量缓存（调试辅助，不入库）
+
+`chunk_node` 切完即把块原样落盘 `data/chunk/{文件名stem}.md`（同名覆盖写），每块前置一行 HTML 注释标记：
+
+```
+<!-- 块 3 | chars=842 | block_type=paragraph | page=5 | section=第2章/2.1 安装 | doc_date=2026-08-01 | image_ids=img_ab12cd34ef -->
+正文内容……
+```
+
+用途：切片质量（跨页表格是否断裂、块大小、page/block_type/section 标记、图片引用）直接查向量库不直观，这份可读副本打开即可逐块人工核对。写盘失败只打一行终端提示、不抛异常、不影响主链路（落库）判 failed。
+
+### 7.8 异步摄取与并发落库（2026-09-09）
+
+**为什么异步**：原 `POST /api/v1/ingest` 在请求线程同步跑完整管线（保存→解析→切片→入库），大文件（220 页年报）会长时间占住请求，前端干等「上传中」；串行上传时一个大文件阻塞其后所有文件。改为**上传与处理解耦**：请求线程只落盘 inbox + 估算 ETA，立即返回 `job_id`；真正的切片/入库在 `ThreadPoolExecutor`（`DOCAGENT_INGEST_WORKERS` 默认 2）后台线程跑，多文件互不阻塞。前端拿 `job_id` 即翻「处理中」+ 不确定动画，轮询 `/status` 把状态翻成「已完成/失败」。
+
+**并发落库安全**（多 worker 同时写 Chroma 必炸）：`store.get_collection()` 改为进程内**单例 `PersistentClient`**（同路径多 client → `database is locked`），并把「`collection.get` 读旧 → `embed_texts` 嵌入 → `collection.upsert` 落库」整段用一把进程级锁 `_store_lock` 串行化。解析/切块仍并行，仅碰 Chroma 与打 DashScope 的共享段串行——杜绝写锁争用。实测 4 并发各 120 块 → 0 错误、md5 幂等正确、库内 480 块。
+
+**任务注册表**：内存字典 `_INGEST_JOBS`，`/jobs` 返回倒序快照供「最近上传记录」面板回查；超 200 条自动回收最旧已完结项。重启清空未完成任务（已知边界，不持久化）。
+
 ## 8. 测试与验证
 
 | 脚本 | 覆盖 | 语料依赖 | 结果 |
@@ -438,7 +513,7 @@ doc-agent/
 | `verify_images_ref.py` | 图片引用链路：提取 / 占位符 / 幂等 / 回填 | `generated/` 含图样本 | 28/28 |
 | `verify_ingest_m1.py` | 质量门活体生效 / 混合格式全 ok / 幂等全 skip / 坏文件隔离不中断 / mock 降级标注 | `generated/` + 真实 PDF | 51/51 |
 | `verify_ingest_m2.py` | VLM 转录注入（红页不产块/追加尾部/幂等）/ 图片落盘 | `generated/` + 真实 PDF | 15/15 |
-| `verify_server_ingest.py` | ingest 端点真实链路：上传 ok / 重传 skip / 坏文件业务失败 | 仅 `generated/`（clone 即跑） | 9/9 |
+| `verify_server_ingest.py` | ingest 端点异步契约：上传即返 job_id / 轮询至终态 / 重传 skip / 坏文件业务失败 | 仅 `generated/`（clone 即跑） | 9/9 |
 | `verify_docqa_m3.py` | 问答链路：引用约束 / 幽灵剔除 / sources 契约 / 降级不崩 | 临时库 mock | 14/14 |
 | `verify_docqa_m4.py` | 评估引擎：golden 校验 / 指标 / 门槛 / usage 聚合 | 临时库 mock | 29/29 |
 | `verify_date_metadata.py` | 日期解析 / 溯源键契约 / where 过滤 / 两段式裁决三场景 | 临时库 mock | 37/37 |
@@ -463,10 +538,11 @@ doc-agent/
 | **M1** | 项目骨架 + 探测/分格式切块 + 质量门 + **LangGraph 摄取编排**（5 节点）+ CLI/API 双入口 + 幂等落库 | ✅（51/51 + 9/9） |
 | **M2** | 图片引用链路（提取/占位符/sqlite 仓库/落盘，D7）+ **VLM 转录**（gate 条件边 → 红页 Qwen-VL 转录，v2 追加尾部语义） | ✅（15/15；真实闭环实证） |
 | **M3** | 问答链路：检索 → LLM 生成 → **幽灵引用剔除** → 引用溯源 sources → `/api/v1/chat` 真链路 + 图片展示 | ✅（14/14） |
-| **M4** | **评估体系**：golden 集 + 检索 recall@5/MRR + 答案层引用可回查率 + 门槛 + 报告落盘 | ✅ 初级版（29/29；真实 recall@5=1.0 / MRR=0.885 / 可回查率 100%） |
+| **M4** | **评估体系**：golden 定稿 20 条 × 9 文档 + 检索 recall@5/MRR + 答案层引用可回查率 + 门槛 + 报告落盘 | ✅ 定稿（29/29；真实 recall@5=0.95 / MRR=0.882 / 可回查率 100%，q17 诚实用例） |
 | — 增量 — | metadata 日期键（`doc_date`/`doc_year`/`ingested_at`）+ 召回年份感知（两段式裁决防张冠李戴）+ 存量库零重嵌迁移 | ✅（37/37 + 真实四场景） |
+| — 增量 — | 切片质量缓存（`data/chunk` 落盘）/ 异步摄取（线程池 + job 注册表 + `/status` + `/jobs`）/ Chroma 并发落库加固（单例 client + 落库锁） | ✅（真实链路 4 并发零错误；上传页 jobs 面板 JS 回填待补，见 §12） |
 
-**v1.1 候选**（不在 MVP 承诺内，见 requirements.md）：golden 扩到 20 条；MinerU 慢路径接入（D5，测后决定）；混合检索（BM25+RRF）与 Rerank；多轮会话记忆；忠实性深度 checker（答案断言 ↔ 引用块核对）；文档粒度并行（Send）与 checkpoint 断点续跑。
+**v1.1 候选**（不在 MVP 承诺内，见 requirements.md）：golden 补负例与多轮追问用例（20 条已达成 R4 线）；MinerU 慢路径接入（D5，测后决定）；混合检索（BM25+RRF）与 Rerank（q17 表格数字 miss 的直接增强方向）；多轮会话记忆；忠实性深度 checker（答案断言 ↔ 引用块核对）；文档粒度并行（Send）与 checkpoint 断点续跑。
 
 **存量库迁移备忘**：metadata 结构变更后旧块不自动升级（md5 不感知 metadata）。模式 = 写一次性脚本显式 `collection.update(ids, metadatas)`（零重嵌），如 `scripts/upgrade_add_date_metadata.py`（1400 块秒级完成，幂等可重跑）。
 
@@ -486,6 +562,14 @@ doc-agent/
 4. **确定性优先于赌模型**——能规则判定的不请 LLM（质量门零成本信号、幽灵引用代码层剔除、年份裁决纯正则即三例）。
 5. **降级不掩盖、mock 不冒充**——无 Key 可跑但明确标注 degraded，验证脚本同时覆盖 mock 与真实链路。
 6. **与业务语义对齐**——切片单元 = 作者切好的知识边界（行/页/章节），不按字符窗口硬切。
+
+## 12. 已知局限与待办
+
+- **复杂版面 PDF 的端到端语义切块**（已知待优化）：当前 PDF 是页内切块 + 红页追加尾部，对跨页大表格、被吞的章节标题、单独成块的表格等场景切块边界不够优（中金辐照公告已观测到「片段 1 末尾 + 片段 2 开头被切一起、表格单独成块」）。轻量修 = 识别中文数字章节标题打断聚合；重量修 = 版面层级语义切块。v1.1 候选。
+- **上传页「最近上传记录」面板 JS 回填待接**：服务端 `/jobs`、`/status` 已可用，HTML 容器已就位，但轮询把任务结果回填进面板的 JS 逻辑尚未接入（当前上传后页面停在「处理中」+ ETA，关闭页面不影响后台，但需手动刷新/轮询才能看到终态）。这是今天代码 review 的重点待补项。
+- **任务注册表内存态**：`_INGEST_JOBS` 不持久化，服务重启丢未完成任务（符合不过度设计，当前不引入 Redis/DB 任务队列）。
+- **评估 q17 保留用例**：振华英文年报净利数字问，表格断行文本 + 语义词在大库内分布广 → 单路向量召回 miss；检索 miss 时引用仍可回查但答案依据弱（"可回查 ≠ 答对"），作 rerank/表格增强评估基线，不以改 query 洗指标。
+- **年份过滤依赖文件名日期**：标题无年份的公告缺 `doc_date`，会被年份过滤排除走回退；相对时间词（"去年/最新一期"）初级版不处理。
 
 ---
 

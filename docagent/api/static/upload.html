@@ -1,41 +1,51 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<html lang="zh-CN" data-page-node-id="DNkjZRCP1Syq7I7RdUK6No">
+<head data-page-node-id="yNZOsycMsTFjRFOFsEQA3n">
+  <meta charset="UTF-8" data-page-node-id="4rvs9ux3RiQiMGkYrO1FLY" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="0CXeXCxN1gibQXHCu7dbCL" />
   <title>DocAgent · 文档上传</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css" data-page-node-id="kiQFLkilL6MdnYS9IhXCBm" />
 </head>
-<body>
+<body data-page-node-id="1gH88PLKUJx3lGubCwJhMO">
   <!-- 顶部导航：问答页 / 上传页（当前）互相跳转 -->
-  <nav class="top_nav">
-    <span class="brand">Doc<span class="accent">Agent</span></span>
-    <a class="nav_link" href="/chat">知识问答</a>
-    <a class="nav_link active" href="/upload">文档上传</a>
-    <span class="nav_spacer"></span>
-    <button id="clear_all_button" class="danger">清空列表</button>
+  <nav class="top_nav" data-page-node-id="iJYt7nBQRgXkNQIqcK1lNC">
+    <span class="brand" data-page-node-id="a66FUod6TqVVrM9gVg3h44">Doc<span class="accent" data-page-node-id="jPgLJDEi0wy1Uf5QQxV653">Agent</span></span>
+    <a class="nav_link" href="/chat" data-page-node-id="tRpbvSyliyS6X2szoCk4Dj">知识问答</a>
+    <a class="nav_link active" href="/upload" data-page-node-id="N9yHTO0NGHbQymh0qqzYwj">文档上传</a>
+    <span class="nav_spacer" data-page-node-id="20RzPveSiTCTDjWR2mLvTv"></span>
+    <button id="clear_all_button" class="danger" data-page-node-id="kS4tny3cTiJsbTVNI5Wjik">清空列表</button>
   </nav>
 
-  <main class="page_container">
-    <h1 class="page_title">文档上传</h1>
-    <p class="page_subtitle">上传后自动进入解析与建库流水线（格式探测 → 解析 → 质量门 → 切片 → 落库）。支持一次选多个文件，或整个文件夹。</p>
+  <main class="page_container" data-page-node-id="NesYjDh05hcwWAY646yQOp">
+    <h1 class="page_title" data-page-node-id="ndXTg0d5HCHmqLzGQ4KKol">文档上传</h1>
+    <p class="page_subtitle" data-page-node-id="iMokhN2MgFP8bbu4WTraU0">上传即进入后台流水线（格式探测 → 解析 → 质量门 → 切片 → 落库），多文件并发、互不阻塞。大文件会先返回预计耗时，处理中可稍后回来查看结果。</p>
 
-    <div class="panel">
+    <div class="panel" data-page-node-id="f7dWtMJagMtA1IjzDZnRMA">
       <!-- 双入口：文件多选 与 文件夹（webkitdirectory，仅 Chromium 系浏览器支持） -->
-      <input type="file" id="file_picker" class="hidden_file_input" multiple />
-      <input type="file" id="folder_picker" class="hidden_file_input" webkitdirectory />
+      <input type="file" id="file_picker" class="hidden_file_input" multiple data-page-node-id="rqrE24uiq2ZFpbiibZSXxP" />
+      <input type="file" id="folder_picker" class="hidden_file_input" webkitdirectory data-page-node-id="PcYqGJ1AHR2nmadK1NTKP4" />
 
-      <div class="upload_actions">
-        <button id="pick_files_button" class="primary">选择文件（可多选）</button>
-        <button id="pick_folder_button">选择文件夹</button>
-        <button id="start_upload_button" disabled>开始上传</button>
-        <span id="folder_support_hint" class="upload_hint"></span>
+      <div class="upload_actions" data-page-node-id="JyUZHPSQutfq90VrXqQgNx">
+        <button id="pick_files_button" class="primary" data-page-node-id="pmMrfwBUfeJMLX38z0FqNJ">选择文件（可多选）</button>
+        <button id="pick_folder_button" data-page-node-id="vrZKQd6CZ0RJB1Kbh3f1Yc">选择文件夹</button>
+        <button id="start_upload_button" disabled data-page-node-id="DAArr3vvLuH7sDfCwpSZlb">开始上传</button>
+        <span id="folder_support_hint" class="upload_hint" data-page-node-id="E8kGfh0Mk5TePBcShFZqyk"></span>
       </div>
-      <p class="upload_hint">支持格式：PDF / Word / Excel / PPT / Markdown 等（解析层按格式路由）</p>
+      <p class="upload_hint" data-page-node-id="WECMQJsnMFLe0G5WbuBZKC">支持格式：PDF / Word / Excel / PPT / Markdown 等（解析层按格式路由）</p>
 
       <!-- 待传/已传文件列表：每行一个文件，含进度与状态 -->
-      <div id="file_list" class="file_list"></div>
-      <div id="summary_bar" class="summary_bar" style="display:none"></div>
+      <div id="file_list" class="file_list" data-page-node-id="EGaf81QEyT5CbORKcf2yGL"></div>
+      <div id="summary_bar" class="summary_bar" style="display:none" data-page-node-id="ibPWKQ90YCGoEQKowsnWJg"></div>
+    </div>
+
+    <!-- 最近上传记录：服务端后台任务，关页面不影响；可回来回查进度与结果 -->
+    <div class="panel recent_panel">
+      <div class="recent_header">
+        <h2 class="recent_title">最近上传记录</h2>
+        <button id="refresh_recent_button" class="secondary">刷新</button>
+      </div>
+      <p class="recent_hint">文件在服务端后台切片 / 入库，关掉本页也不影响；过会儿回来这里即可查看进度与结果。</p>
+      <div id="recent_list" class="file_list"></div>
     </div>
   </main>
 
@@ -43,14 +53,19 @@
     "use strict";
     /* ============================================================
        上传页前端逻辑
-       API 契约（后端 M1 对齐实现）：
-         POST /api/v1/ingest            multipart/form-data，字段名 file
-         成功: { "filename": string, "status": "ok",
-                 "pages_parsed": number, "chunks_created": number }
-         失败: { "filename": string, "status": "failed", "error": string }
-       约定：解析失败也返回 HTTP 200 + status=failed（业务失败不算网络错误）；
-             网络层错误才走非 200。
-       说明：当前为前端骨架，后端链路 M1 接入前，接口返回演示占位结果。
+       API 契约（后端异步摄取，2026-09-09 起）：
+         POST /api/v1/ingest   multipart/form-data，字段名 file
+           立刻返回（不等待解析）：
+             { "job_id": string, "status": "queued",
+               "pages": number|null, "eta_seconds": number,
+               "message": "已接收，后台处理中，预计约 N 分钟 后可查询" }
+           仅落盘失败才在此返回 { "status": "failed", "error" }
+         GET  /api/v1/ingest/status?job_id=xxx   轮询任务状态
+           返回快照：status ∈ queued|processing|done|failed，
+                     done/failed 时含 result{ pages_parsed, chunks_created, stored, skipped, format, degraded, error }
+                     + eta_seconds / waited_s / remaining_s 供进度提示
+       约定：上传仅做落盘，真正的解析/切片/入库在后台并发执行；
+             前端轮询状态，把「处理中」翻成「已完成/失败」。
        ============================================================ */
 
     // 单个待传文件在内存中的状态（选择后、上传前集中管理）
@@ -152,10 +167,18 @@
       return (bytes / 1024 / 1024).toFixed(1) + " MB";
     }
     function status_label(status) {
-      return { pending: "待上传", uploading: "上传中", ok: "已完成", failed: "失败" }[status] || status;
+      return { pending: "待上传", queued: "排队中", uploading: "上传中", processing: "处理中", ok: "已完成", failed: "失败" }[status] || status;
+    }
+    function format_duration(seconds) {
+      seconds = Math.max(0, Math.round(seconds || 0));
+      if (seconds < 60) return seconds + " 秒";
+      const m = Math.round(seconds / 60);
+      return m + " 分钟";
     }
 
     // ---- 逐个上传：XHR 才能拿到上传进度事件（fetch 不支持）----
+    // 上传仅把文件推到服务端落盘；服务端立刻返回 job_id，真正解析/切片在后台跑，
+    // 拿到 job_id 后翻「处理中」并启动轮询。
     function upload_one_entry(entry, index) {
       return new Promise(function (resolve) {
         entry.status = "uploading";
@@ -175,12 +198,16 @@
         request.onload = function () {
           let body = null;
           try { body = JSON.parse(request.responseText); } catch (parse_error) { /* 响应非 JSON，按失败处理 */ }
-          if (request.status >= 200 && request.status < 300 && body && body.status === "ok") {
-            entry.status = "ok";
-            entry.parsed_pages = body.pages_parsed;
-            entry.created_chunks = body.chunks_created;
+          if (request.status >= 200 && request.status < 300 && body && body.job_id) {
+            // 上传成功：进入后台处理，开始轮询
+            entry.status = "processing";
+            entry.job_id = body.job_id;
+            entry.pages = body.pages;
+            entry.eta_seconds = body.eta_seconds;
+            entry.eta_message = body.message;
             update_row_status(index);
-            update_row_progress(index, 100);
+            update_row_progress(index, 0, true);  // 进度条转入不确定动画
+            poll_job(entry, index);
           } else {
             entry.status = "failed";
             entry.error = (body && body.error) || ("服务返回 " + request.status);
@@ -199,19 +226,22 @@
       });
     }
 
+    // （轮询逻辑已统一收归「最近上传记录」面板，见 poll_recent_job）
+
     async function start_upload() {
-      const pending_indexes = [];
-      selected_files.forEach(function (entry, index) {
-        if (entry.status === "pending") pending_indexes.push(index);
-      });
-      if (pending_indexes.length === 0) { alert("没有待上传的文件"); return; }
+      const pending = selected_files.filter(function (entry) { return entry.status === "pending"; });
+      if (pending.length === 0) { alert("没有待上传的文件"); return; }
 
       start_button.disabled = true;
-      // 逐个串行上传：管线单文档处理语义，也避免并发打满服务
-      for (const index of pending_indexes) {
-        await upload_one_entry(selected_files[index], index);
+      // 逐个串行上传：管线单文档处理语义，也避免并发打满服务。
+      // 每个文件上传完即交服务端后台处理（add_recent_job 接管跟踪），随后从待传列表移除。
+      for (const entry of pending) {
+        await upload_one_entry(entry, selected_files.indexOf(entry));
       }
       start_button.disabled = false;
+      // 移交完成：把已提交的从待传列表移除（进度/结果在「最近上传记录」面板继续）
+      selected_files = selected_files.filter(function (entry) { return !entry.submitted; });
+      refresh_file_list();
       update_summary();
     }
 
@@ -220,17 +250,48 @@
       const row = file_list_element.querySelector('.file_row[data-index="' + index + '"]');
       if (!row) return;
       const badge = row.querySelector(".status_badge");
+      const meta_cell = row.querySelector(".file_meta");
       const entry = selected_files[index];
       badge.className = "status_badge " + entry.status;
       badge.textContent = entry.status === "failed" && entry.error ? "失败" : status_label(entry.status);
+      // 元信息行显示结果明细：成功 = 入库/跳过计数；处理中 = ETA 提示；失败 = 具体原因
+      let meta_text = format_file_size(entry.file.size);
+      if (entry.status === "ok") {
+        meta_text += " · " + format_ingest_result(entry);
+        meta_cell.style.color = "";
+      } else if (entry.status === "processing") {
+        meta_text += " · 处理中";
+        if (typeof entry.remaining_s === "number") meta_text += " · 预计还需约 " + format_duration(entry.remaining_s);
+        else if (entry.eta_message) meta_text += " · " + entry.eta_message;
+        meta_cell.style.color = "var(--color_pending)";
+      } else if (entry.status === "failed") {
+        meta_text += " · " + (entry.error || "未知错误");
+        meta_cell.style.color = "var(--color_failed)";
+      }
+      meta_cell.textContent = meta_text;
       badge.title = entry.error || "";
       const remove_button = row.querySelector(".remove_button");
-      if (remove_button) remove_button.disabled = entry.status === "ok" || entry.status === "uploading";
+      if (remove_button) remove_button.disabled = entry.status === "ok" || entry.status === "uploading" || entry.status === "processing";
     }
-    function update_row_progress(index, percent) {
+    function update_row_progress(index, percent, indeterminate) {
       const row = file_list_element.querySelector('.file_row[data-index="' + index + '"]');
       if (!row) return;
-      row.querySelector(".progress_fill").style.width = percent + "%";
+      const fill = row.querySelector(".progress_fill");
+      if (indeterminate) { fill.classList.add("indeterminate"); return; }
+      fill.classList.remove("indeterminate");
+      fill.style.width = percent + "%";
+    }
+
+    // 摄取结果摘要：切片数 + 入库/跳过（幂等命中跳过不算失败）+ 格式/降级
+    function format_ingest_result(entry) {
+      let text = "";
+      if (entry.created_chunks != null) text += "切片 " + entry.created_chunks;
+      if (entry.stored != null || entry.skipped != null) {
+        text += "（入库 " + (entry.stored || 0) + " · 跳过 " + (entry.skipped || 0) + "）";
+      }
+      if (entry.format) text += " · " + entry.format;
+      if (entry.degraded) text += " · 降级";
+      return text;
     }
 
     function update_start_button_state() {
@@ -257,8 +318,8 @@
 
     start_button.addEventListener("click", start_upload);
     document.getElementById("clear_all_button").addEventListener("click", function () {
-      // 上传中的文件不打断（服务端仍在处理），仅清空已结束的列表项
-      const removable = selected_files.filter(function (entry) { return entry.status !== "uploading"; });
+      // 上传中/处理中的文件不打断（服务端仍在处理），仅清空已结束的列表项
+      const removable = selected_files.filter(function (entry) { return entry.status !== "uploading" && entry.status !== "processing"; });
       selected_files = removable;
       refresh_file_list();
     });

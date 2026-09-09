@@ -11,6 +11,7 @@ data/index_meta.json
 data/ingest_runs.json
 data/images/         # 摄取提取的图片文件（doc_id 子目录，幂等落盘）
 data/image_files.db  # 图片资源 sqlite 索引
+data/chunk/          # 切片检查缓存（调试辅助产物，随跑随覆盖）
 
 # 大体积语料不入库（面试演示用固定样本，必要时单独分发）
 data/samples/*.pdf

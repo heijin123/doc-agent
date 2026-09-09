@@ -39,19 +39,21 @@
     "use strict";
     /* ============================================================
        问答页前端逻辑
-       API 契约（后端 M2 对齐实现）：
+       API 契约（后端 M3 真实链路）：
          POST /api/v1/chat
          请求:  { "message": string, "thread_id": string|null }
          响应:  {
-                  "thread_id": string,          // 服务端会话号，无则新建
-                  "final_answer": string,       // 最终答复文本
-                  "sources": [                  // 引用出处（检索到的文档块）
-                    { "document_name": string, "page_number": number|null,
-                      "snippet": string }
+                  "thread_id": string,     // 服务端会话号，无则新建
+                  "final_answer": string,  // 最终答复（含 [n] 引用角标）
+                  "sources": [             // 引用出处（被 [n] 引用的检索块）
+                    { "block_id": string, "document_name": string,
+                      "page_number": number|null, "doc_date": string|null,
+                      "snippet": string, "image_ids": string[] }
                   ],
-                  "duration_s": number
+                  "note": string|null,     // 系统说明（年份过滤降级/检索失败等）
+                  "degraded": boolean,     // 降级（无 Key 等）
+                  "usage": {...}, "duration_s": number
                 }
-       说明：当前为前端骨架，后端链路 M2 接入前，接口返回演示占位答复。
        ============================================================ */
 
     // ---- 会话状态：thread_id 存 localStorage，同一浏览器持续同一会话 ----
@@ -84,7 +86,10 @@
         sources.forEach(function (src) {
           const tag = document.createElement("span");
           tag.className = "source_tag";
-          tag.textContent = src.document_name + (src.page_number ? " · 第" + src.page_number + "页" : "");
+          // 文档日期与页号并列展示：跨年份问答时肉眼可辨回答来自哪一年（防张冠李戴）
+          const date_part = src.doc_date ? " · " + src.doc_date : "";
+          const page_part = src.page_number ? " · 第" + src.page_number + "页" : "";
+          tag.textContent = src.document_name + date_part + page_part;
           tag.title = src.snippet || "";
           box.appendChild(tag);
           // 引用块关联的原图（[IMAGE] 占位的实体）——图片展示引用链路（D7）
@@ -111,6 +116,16 @@
       wrap.appendChild(who);
       wrap.appendChild(bubble);
       history_element.appendChild(wrap);
+      history_element.scrollTop = history_element.scrollHeight;
+    }
+
+    // 系统说明条（年份过滤降级 / 检索失败等后端 note）：黄色提示，紧跟答案下方
+    function append_note(note_text) {
+      if (!note_text) return;
+      const note = document.createElement("div");
+      note.className = "system_note";
+      note.textContent = "ℹ " + note_text;
+      history_element.appendChild(note);
       history_element.scrollTop = history_element.scrollHeight;
     }
 
@@ -149,8 +164,10 @@
         if (thread_id) localStorage.setItem(THREAD_KEY, thread_id);
 
         hide_typing();
+        const degraded_mark = data.degraded ? " · 降级模式" : "";
         append_message("assistant", data.final_answer, data.sources || [],
-          data.duration_s != null ? "耗时 " + data.duration_s + " 秒" : null);
+          data.duration_s != null ? "耗时 " + data.duration_s + " 秒" + degraded_mark : null);
+        append_note(data.note || null);
       } catch (error) {
         hide_typing();
         append_message("assistant", "请求失败：" + error.message + "（服务是否已启动？）");

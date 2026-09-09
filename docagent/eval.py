@@ -67,8 +67,9 @@ def validate_golden(cases: list[dict]) -> list[str]:
         ]
         if missing:
             errors.append(f"{case_id} 缺字段: {missing}")
-        elif len(case.get("query") or "") < 4 or len(case.get("anchor") or "") < 6:
-            # 字段齐备但太短无法定位（缺字段已报，不双报）
+        elif len(case.get("query") or "") < 4 or len(case.get("anchor") or "") < 4:
+            # 字段齐备但太短无法定位（缺字段已报，不双报）。下限 4 字符：
+            # CJK 锚句 5 字已可唯一定位（如"安装前审查"），6 字下限曾误报合法短锚
             errors.append(f"{case_id} query/anchor 过短，无法定位")
     return errors
 

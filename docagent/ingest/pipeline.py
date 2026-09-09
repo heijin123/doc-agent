@@ -183,6 +183,33 @@ def vlm_node(state: IngestState) -> dict:
         }
 
 
+def _dump_chunks_cache(document_stem: str, chunking: ChunkingResult) -> None:
+    """把切好的块原样落盘一份可读 md（data/chunk/{stem}.md），供人工抽查切片质量。
+
+    为什么加这份副本：切片质量（跨页表格是否断裂、块大小、page/block_type 标记）
+    直接查向量库不直观，切完立即按块顺序拼成带标记的文件，打开即可逐块核对。
+    同名覆盖写（只看最新一次摄取结果）；写盘失败只终端提示一行、不外抛——
+    这是调试辅助产物，缺失不应让主链路（落库）判 failed。
+    """
+    try:
+        cache_dir = config.CHUNK_CACHE_DIR
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        sections: list[str] = []
+        for block_index, chunk in enumerate(chunking.chunks):
+            marker_parts = [
+                f"块 {block_index}",
+                f"chars={len(chunk.text)}",
+            ]
+            for key in ("block_type", "page", "section", "doc_date", "doc_year", "image_ids"):
+                value = chunk.metadata.get(key)
+                if value not in (None, ""):
+                    marker_parts.append(f"{key}={value}")
+            sections.append(f"<!-- {' | '.join(marker_parts)} -->\n\n{chunk.text}")
+        (cache_dir / f"{document_stem}.md").write_text("\n\n".join(sections), encoding="utf-8")
+    except Exception as exc:
+        print(f"[切片缓存] {document_stem} 写入失败（不影响摄取）: {exc}")
+
+
 def chunk_node(state: IngestState) -> dict:
     """按格式定制切片（复用 chunk_document；红页转录文本经 vlm_transcripts 注入）。"""
     start = time.perf_counter()
@@ -191,6 +218,7 @@ def chunk_node(state: IngestState) -> dict:
             Path(state["file_path"]),
             vlm_transcripts=state.get("vlm_transcripts"),
         )
+        _dump_chunks_cache(state["doc_id"], result)
         return {
             "chunking": result,
             "document_type": result.document_type,

@@ -154,6 +154,19 @@ button.danger:hover:not(:disabled) { border-color: var(--color_failed); color: v
 .message .meta { font-size: 12px; color: var(--color_text_secondary); margin-top: 6px; }
 .typing_indicator { color: var(--color_text_secondary); font-size: 13px; padding: 6px 0; }
 
+/* 系统说明条（问答页）：年份过滤降级/检索失败等后端 note，与答案区分开 */
+.system_note {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--color_pending);
+  background: var(--color_pending_light);
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 4px 10px;
+  max-width: 78%;
+  word-break: break-word;
+}
+
 .chat_input_bar {
   display: flex;
   gap: 10px;
@@ -209,6 +222,7 @@ button.danger:hover:not(:disabled) { border-color: var(--color_failed); color: v
 }
 .status_badge.pending { background: var(--color_pending_light); color: var(--color_pending); }
 .status_badge.uploading { background: var(--color_accent_light); color: var(--color_accent); }
+.status_badge.processing { background: var(--color_pending_light); color: var(--color_pending); }
 .status_badge.ok { background: var(--color_success_light); color: var(--color_success); }
 .status_badge.failed { background: var(--color_failed_light); color: var(--color_failed); }
 .file_row .progress_track {
@@ -225,7 +239,23 @@ button.danger:hover:not(:disabled) { border-color: var(--color_failed); color: v
   background: var(--color_accent);
   transition: width 0.2s;
 }
+/* 后台处理中：进度条做不确定动画，区别于「上传中」的真实百分比 */
+.progress_track .progress_fill.indeterminate {
+  width: 40%;
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
 .summary_bar { margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: var(--color_background); color: var(--color_text_secondary); font-size: 13px; }
 .summary_bar .count { color: var(--color_accent); font-weight: 700; }
+
+/* 最近上传记录面板 */
+.recent_panel { margin-top: 28px; }
+.recent_header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.recent_title { font-size: 16px; font-weight: 600; margin: 0; color: var(--color_text); }
+.recent_hint { font-size: 13px; color: var(--color_text_secondary); margin: 0 0 4px; }
+.recent_empty { padding: 18px 14px; font-size: 13px; color: var(--color_text_secondary); border-top: 1px solid var(--color_border); }
 
 .hidden_file_input { display: none; }

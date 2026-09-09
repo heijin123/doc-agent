@@ -1,10 +1,11 @@
 {
   "meta": {
-    "version": "1.0",
-    "created": "2026-09-08",
-    "scope": "M4 初级版：跨 7 份真实语料文档，中英双语；覆盖 VLM 转录块/中文手册/公告事实型/年报大文档/表格型 PDF",
+    "version": "2.0",
+    "created": "2026-09-09",
+    "scope": "M4 定稿版：跨 9 份真实语料文档(新增正川/南卫)，中英双语；覆盖 VLM 转录块/中文手册/公告/年报大文档/半年报表格/表格型 PDF；难度含浅/中/中高，含年份护栏用例 q14",
     "fields": "id=用例号, query=评测提问, expect_doc=期望命中文档(doc_id), anchor=期望块内原文片段(定位期望块用, 空白与大小写不敏感), note=设计意图",
-    "metric_note": "recall@k=至少一个期望块出现在 top-k 的用例占比; MRR=首个期望块命中位置倒数均值; 门槛 recall@5>=0.8"
+    "metric_note": "recall@k=至少一个期望块出现在 top-k 的用例占比; MRR=首个期望块命中位置倒数均值; 门槛 recall@5>=0.8",
+    "cases_total": 20
   },
   "cases": [
     {
@@ -97,6 +98,55 @@
       "expect_doc": "3_invoice_table_cn",
       "anchor": "26362000001482530851",
       "note": "表格型 1 页 PDF(列乱序文本)，中文事实型(中高)"
+    },
+    {
+      "id": "q14",
+      "query": "正川股份在 2026 年半年度报告中的公司股票代码是多少？",
+      "expect_doc": "正川股份：2026年半年度报告摘要（修订版）",
+      "anchor": "603976",
+      "note": "新文档(正川)；2026 年份护栏活体(expect doc_year=2026)；摘要与简介表格双块"
+    },
+    {
+      "id": "q15",
+      "query": "正川股份 2026 年半年度报告中，归属于上市公司股东的扣除非经常性损益的净利润是多少元？",
+      "expect_doc": "正川股份：2026年半年度报告摘要（修订版）",
+      "anchor": "7,080,923.37",
+      "note": "半年报财务表格数字(seq2)，考核扣非口径的精确检索"
+    },
+    {
+      "id": "q16",
+      "query": "南卫股份控股股东李平向受让方吴为荣协议转让股份的总价款是多少元？",
+      "expect_doc": "南卫股份：南卫股份关于公司控股股东协议转让股份过户完成的公告",
+      "anchor": "107,780,000",
+      "note": "新文档(南卫)；公告摘要与详情双块；17,000,000 股×6.34 元/股"
+    },
+    {
+      "id": "q17",
+      "query": "According to the 2025 Annual Report of Shanghai Zhenhua Heavy Industries, what was the net profit attributable to shareholders of the listed company (in RMB)?",
+      "expect_doc": "振华重工：振华重工2025年年度报告（英文版）",
+      "anchor": "16,176,507,028",
+      "note": "英文年报财务摘要(seq11/12)与后文引述(seq301/330)多处，大库精确数字"
+    },
+    {
+      "id": "q18",
+      "query": "天力锂能的核心产品包括哪些？它们属于锂电池产业链的哪个环节？",
+      "expect_doc": "天力锂能：天力锂能集团股份有限公司2024年年度报告（更正后）",
+      "anchor": "三元材料、磷酸铁锂和碳酸锂",
+      "note": "管理层讨论与行业分析(seq11)，补充主营概念角度"
+    },
+    {
+      "id": "q19",
+      "query": "In the ReAct paper abstract, how do reasoning traces and actions interleave, and what does each contribute?",
+      "expect_doc": "2_react_paper_en",
+      "anchor": "in an interleaved manner",
+      "note": "英文摘要语义(seq0/seq1/seq122)，区别于 q01 图内转录与 q02 标题页的第三角度"
+    },
+    {
+      "id": "q20",
+      "query": "Hermes 手册用\"从金鱼到老友\"比喻它的记忆机制，这套三层记忆分别是什么？",
+      "expect_doc": "1_hermes_agent_manual_cn",
+      "anchor": "三层记忆：从金鱼到老友",
+      "note": "目录(seq1)与正文§07 记忆章节(seq26)双块，中文概念型"
     }
   ]
 }
