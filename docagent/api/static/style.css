@@ -221,6 +221,7 @@ button.danger:hover:not(:disabled) { border-color: var(--color_failed); color: v
   text-align: center;
 }
 .status_badge.pending { background: var(--color_pending_light); color: var(--color_pending); }
+.status_badge.queued { background: var(--color_pending_light); color: var(--color_pending); }
 .status_badge.uploading { background: var(--color_accent_light); color: var(--color_accent); }
 .status_badge.processing { background: var(--color_pending_light); color: var(--color_pending); }
 .status_badge.ok { background: var(--color_success_light); color: var(--color_success); }

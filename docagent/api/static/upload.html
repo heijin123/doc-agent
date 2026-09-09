@@ -61,8 +61,8 @@
                "message": "已接收，后台处理中，预计约 N 分钟 后可查询" }
            仅落盘失败才在此返回 { "status": "failed", "error" }
          GET  /api/v1/ingest/status?job_id=xxx   轮询任务状态
-           返回快照：status ∈ queued|processing|done|failed，
-                     done/failed 时含 result{ pages_parsed, chunks_created, stored, skipped, format, degraded, error }
+           返回快照：status ∈ queued|processing|ok|failed，
+                     ok/failed 时含 result{ pages_parsed, chunks_created, stored, skipped, format, degraded, error }
                      + eta_seconds / waited_s / remaining_s 供进度提示
        约定：上传仅做落盘，真正的解析/切片/入库在后台并发执行；
              前端轮询状态，把「处理中」翻成「已完成/失败」。
@@ -199,15 +199,14 @@
           let body = null;
           try { body = JSON.parse(request.responseText); } catch (parse_error) { /* 响应非 JSON，按失败处理 */ }
           if (request.status >= 200 && request.status < 300 && body && body.job_id) {
-            // 上传成功：进入后台处理，开始轮询
-            entry.status = "processing";
+            // 上传成功：文件已落地服务端，直接标绿「上传成功」。
+            // 真正的切片 / 入库在后台跑，进度与结果由「最近上传记录」面板轮询展示，无需挂着页面。
+            entry.status = "ok";
             entry.job_id = body.job_id;
-            entry.pages = body.pages;
-            entry.eta_seconds = body.eta_seconds;
-            entry.eta_message = body.message;
+            entry.submitted = true;
             update_row_status(index);
-            update_row_progress(index, 0, true);  // 进度条转入不确定动画
-            poll_job(entry, index);
+            load_recent_jobs();        // 立即把本任务纳入最近记录面板
+            schedule_recent_poll();    // 启动后台轮询（仅当存在非终态任务时持续）
           } else {
             entry.status = "failed";
             entry.error = (body && body.error) || ("服务返回 " + request.status);
@@ -226,7 +225,7 @@
       });
     }
 
-    // （轮询逻辑已统一收归「最近上传记录」面板，见 poll_recent_job）
+    // （轮询逻辑统一收归「最近上传记录」面板，见文件末尾的 recent 区块）
 
     async function start_upload() {
       const pending = selected_files.filter(function (entry) { return entry.status === "pending"; });
@@ -239,8 +238,8 @@
         await upload_one_entry(entry, selected_files.indexOf(entry));
       }
       start_button.disabled = false;
-      // 移交完成：把已提交的从待传列表移除（进度/结果在「最近上传记录」面板继续）
-      selected_files = selected_files.filter(function (entry) { return !entry.submitted; });
+      // 已上传的文件保留为绿色「上传成功」行（确认上传确实成功），
+      // 进度 / 结果在「最近上传记录」面板继续，不再从本列表移除。
       refresh_file_list();
       update_summary();
     }
@@ -257,7 +256,7 @@
       // 元信息行显示结果明细：成功 = 入库/跳过计数；处理中 = ETA 提示；失败 = 具体原因
       let meta_text = format_file_size(entry.file.size);
       if (entry.status === "ok") {
-        meta_text += " · " + format_ingest_result(entry);
+        meta_text += " · 上传成功，后台处理中";
         meta_cell.style.color = "";
       } else if (entry.status === "processing") {
         meta_text += " · 处理中";
@@ -323,6 +322,111 @@
       selected_files = removable;
       refresh_file_list();
     });
+
+    // ============================================================
+    // 最近上传记录面板：展示服务端后台任务（关页面不影响），刷新页面也能回看
+    // ============================================================
+    const recent_list_element = document.getElementById("recent_list");
+    const refresh_recent_button = document.getElementById("refresh_recent_button");
+
+    const RECENT_STATUS_LABEL = {
+      queued: "排队中",
+      processing: "处理中",
+      ok: "已完成",
+      failed: "失败",
+      not_found: "已清理",
+    };
+
+    function build_recent_row(job) {
+      const row = document.createElement("div");
+      row.className = "file_row";
+      const status = job.status || "queued";
+
+      const name_cell = document.createElement("div");
+      name_cell.className = "file_name";
+      name_cell.textContent = job.filename;
+      name_cell.title = job.filename;
+
+      const meta_cell = document.createElement("div");
+      meta_cell.className = "file_meta";
+      meta_cell.textContent = format_recent_meta(job);
+
+      const badge = document.createElement("span");
+      badge.className = "status_badge " + (status === "ok" ? "ok" : status === "failed" ? "failed" : status === "queued" ? "queued" : "processing");
+      badge.textContent = RECENT_STATUS_LABEL[status] || status;
+
+      row.appendChild(name_cell);
+      row.appendChild(meta_cell);
+      row.appendChild(badge);
+      return row;
+    }
+
+    function format_recent_meta(job) {
+      if (job.status === "failed") {
+        return "失败：" + (job.error || (job.result && job.result.error) || "未知错误");
+      }
+      if (job.status === "ok" && job.result) {
+        const r = job.result;
+        let text = "";
+        if (r.chunks_created != null) text += "切片 " + r.chunks_created;
+        if (r.stored != null || r.skipped != null) text += "（入库 " + (r.stored || 0) + " · 跳过 " + (r.skipped || 0) + "）";
+        if (r.pages_parsed != null) text += " · 解析 " + r.pages_parsed + " 页";
+        if (r.format) text += " · " + r.format;
+        if (r.degraded) text += " · 降级";
+        return text || "已完成";
+      }
+      let text = "后台处理中";
+      if (typeof job.eta_seconds === "number") text += " · 预计约 " + format_duration(job.eta_seconds);
+      return text;
+    }
+
+    function render_recent_list(jobs) {
+      recent_list_element.innerHTML = "";
+      if (!jobs || jobs.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "recent_empty";
+        empty.textContent = "暂无上传记录。上传文件后，这里会显示后台切片 / 入库的进度与结果。";
+        recent_list_element.appendChild(empty);
+        return;
+      }
+      jobs.forEach(function (job) { recent_list_element.appendChild(build_recent_row(job)); });
+    }
+
+    async function load_recent_jobs() {
+      try {
+        const resp = await fetch("/api/v1/ingest/jobs");
+        if (!resp.ok) return;
+        const data = await resp.json();
+        render_recent_list(data.jobs);
+      } catch (e) { /* 服务未启动或网络异常，忽略 */ }
+    }
+
+    // 轮询：仅当存在非终态（排队中 / 处理中）任务时持续每 3 秒刷新；全部终态后自动停止。
+    let recent_poll_timer = null;
+    function schedule_recent_poll() {
+      if (recent_poll_timer) return;
+      recent_poll_timer = setInterval(async function () {
+        let has_active = false;
+        try {
+          const resp = await fetch("/api/v1/ingest/jobs");
+          if (resp.ok) {
+            const data = await resp.json();
+            render_recent_list(data.jobs);
+            has_active = (data.jobs || []).some(function (j) {
+              return j.status === "queued" || j.status === "processing";
+            });
+          }
+        } catch (e) { /* 忽略瞬时错误 */ }
+        if (!has_active) {
+          clearInterval(recent_poll_timer);
+          recent_poll_timer = null;
+        }
+      }, 3000);
+    }
+
+    refresh_recent_button.addEventListener("click", load_recent_jobs);
+    // 页面加载即拉取一次：刷新后也能看到历史任务（任务注册表在服务端，跨页面刷新保留）
+    load_recent_jobs();
   </script>
 </body>
 </html>
